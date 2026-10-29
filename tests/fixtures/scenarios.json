@@ -86,28 +86,30 @@
     },
     {
       "id": "03-metro-hra-old-wins",
-      "description": "Rent in Mumbai with HRA, 80C and 80D. The old regime comes out Rs 6,500 cheaper.",
+      "description": "Rent in Mumbai with HRA, 80C and Rs 60,000 of self-and-family 80D expenses; the eligible 80D deduction is capped at Rs 25,000.",
       "inputs": {
         "salary": {
           "basic": "800000",
+          "dearness_allowance": "0",
           "hra_received": "450000",
           "other_allowances": "250000",
           "gross": "1500000"
         },
         "rent_paid": "540000",
         "city": "Mumbai",
-        "metro": true,
         "deductions": {
           "section_80c": "150000",
-          "section_80d_self_and_family": "25000"
+          "section_80d_self_and_family": "60000"
         }
       },
       "hra_working": {
         "hra_received": "450000",
-        "rent_minus_10_percent_of_salary": "460000",
-        "50_percent_of_salary_metro": "400000",
+        "salary_for_hra": "800000",
+        "rent_paid_less_10_percent_of_salary": "460000",
+        "metro_salary_limit_for_mumbai": "400000",
+        "non_metro_salary_limit": "320000",
         "exemption": "400000",
-        "note": "Hand-calculated; the calculator has no HRA inputs. Salary for HRA is basic only here (no DA or commission). The three limbs differ, and the metro limb is the smallest, so using 40% (Rs 3,20,000) by mistake would change the result."
+        "note": "Hand-calculated; Mumbai is classified as a metro by the rules. HRA salary is basic plus DA that forms part of retirement benefits; DA is zero in this scenario. Exemption is the lowest of HRA received, rent less 10% of HRA salary, and 50% of salary for a metro city."
       },
       "expected": {
         "new": {
@@ -123,6 +125,8 @@
         },
         "old": {
           "calculator_input": {"net_salary": "1100000", "section_80c": "150000", "section_80d": "25000"},
+          "section_80d_claimed": "60000",
+          "section_80d_allowed": "25000",
           "standard_deduction": "50000",
           "deductions_total": "175000",
           "total_income": "875000",

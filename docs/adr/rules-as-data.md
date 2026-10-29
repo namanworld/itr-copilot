@@ -16,21 +16,28 @@ Slab thresholds, rates, surcharge bands, cess, rebate limits and deduction caps 
 Option 4. Each year's rules live in their own JSON file. On load, the file is parsed into the rules domain model, which rejects it if:
 
 - a required field is missing or has the wrong type;
+- an unknown or misspelled field is present;
 - a rate or amount is not a string parseable as `Decimal` (no JSON floats, per ADR 0001);
-- slab thresholds are not ascending and contiguous, or the top slab is not open-ended;
-- rates fall outside `0`–`1`.
+- amounts are negative, rates fall outside `0`–`1`, or rates decrease across bands;
+- slab or surcharge bands are empty, invalid, non-contiguous, or not open-ended at the top;
+- surcharge bands are defined separately for each tax regime;
+- 80D age-based category limits and the preventive-check-up sublimit are explicit;
+- HRA identifies its three-limit formula, salary components, and metro cities;
+- the 87A rebate exceeds its income threshold, or deduction codes are duplicated;
+- a source ID is missing, empty, or absent from the source catalog.
 
-The calculation code reads only the domain model, never raw JSON. Each file carries a `source` field citing the Finance Act or notification it was taken from, since JSON has no comments.
+The calculation code reads only the domain model, never raw JSON. Rules and nested values carry `source_ids` that refer to `corpus/sources.csv`, since JSON has no comments. The catalog records each source's title, URL, retrieval date, local evidence path, governing Act or Rule, document type, and verification notes. Store concise relevant excerpts or access-attempt notes in `corpus/raw/`; never mark a blocked or redirected source as downloaded or verified.
 
 Ruled out: year branches in code, per-year code modules, and a database.
 
 ### Adding a new year
 
 1. Copy the previous year's file and rename it for the new year.
-2. Update the figures from the Finance Act and set `source`.
-3. Run the loader; fix any validation errors.
-4. Add worked test cases for the new year, ideally checked against the department's calculator or a published example.
-5. If the year introduces something structural (a new regime, a new kind of relief), the JSON alone cannot express it: extend the domain model and the calculation code first, in a separate change.
+2. Update the figures from the Finance Act and set `source_ids`.
+3. Add or update the source catalog rows and save dated source excerpts in `corpus/raw/`. Record failed access attempts explicitly; they are not source evidence.
+4. Run the loader; fix any validation errors.
+5. Add worked test cases for the new year, ideally checked against the department's calculator or a published example.
+6. If the year introduces something structural (a new regime, a new kind of relief), the JSON alone cannot express it: extend the domain model and the calculation code first, in a separate change.
 
 ## Consequences
 
