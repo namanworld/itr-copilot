@@ -1,0 +1,54 @@
+{
+  "financial_year": "2025-26",
+  "assessment_year": "2026-27",
+  "source_ids": ["TAX-SLABS-SALARIED", "NEW-REGIME-87A"],
+  "new_regime": {
+    "source_ids": ["NEW-REGIME-87A"],
+    "slabs": [
+      { "min_income": "0", "max_income": "400000", "rate": "0.0", "source_ids": ["NEW-REGIME-87A"] },
+      { "min_income": "400000", "max_income": "800000", "rate": "0.05", "source_ids": ["NEW-REGIME-87A"] },
+      { "min_income": "800000", "max_income": "1200000", "rate": "0.10", "source_ids": ["NEW-REGIME-87A"] },
+      { "min_income": "1200000", "max_income": "1600000", "rate": "0.15", "source_ids": ["NEW-REGIME-87A"] },
+      { "min_income": "1600000", "max_income": "2000000", "rate": "0.20", "source_ids": ["NEW-REGIME-87A"] },
+      { "min_income": "2000000", "max_income": "2400000", "rate": "0.25", "source_ids": ["NEW-REGIME-87A"] },
+      { "min_income": "2400000", "max_income": null, "rate": "0.30", "source_ids": ["NEW-REGIME-87A"] }
+    ],
+    "standard_deduction": { "salary_max": "75000", "source_ids": ["STD-DEDUCTION-EXEMPT"] },
+    "rebate_87a": {
+      "taxable_income_limit": "1200000",
+      "max_rebate": "60000",
+      "resident_individual_only": true,
+      "source_ids": ["NEW-REGIME-87A"]
+    }
+  },
+  "old_regime": {
+    "source_ids": ["TAX-SLABS-SALARIED", "STD-DEDUCTION-EXEMPT"],
+    "slabs": [
+      { "min_income": "0", "max_income": "250000", "rate": "0.0", "source_ids": ["TAX-SLABS-SALARIED"] },
+      { "min_income": "250000", "max_income": "500000", "rate": "0.05", "source_ids": ["TAX-SLABS-SALARIED"] },
+      { "min_income": "500000", "max_income": "1000000", "rate": "0.20", "source_ids": ["TAX-SLABS-SALARIED"] },
+      { "min_income": "1000000", "max_income": null, "rate": "0.30", "source_ids": ["TAX-SLABS-SALARIED"] }
+    ],
+    "standard_deduction": { "salary_max": "50000", "source_ids": ["STD-DEDUCTION-EXEMPT"] },
+    "rebate_87a": {
+      "taxable_income_limit": "500000",
+      "max_rebate": "12500",
+      "resident_individual_only": true,
+      "source_ids": ["TAX-SLABS-SALARIED"]
+    }
+  },
+  "surcharge_bands": [
+    { "min_income": "5000000", "max_income": "10000000", "rate": "0.10", "marginal_relief": true, "source_ids": ["TAX-SLABS-SALARIED"] },
+    { "min_income": "10000000", "max_income": "20000000", "rate": "0.15", "marginal_relief": true, "source_ids": ["TAX-SLABS-SALARIED"] },
+    { "min_income": "20000000", "max_income": "50000000", "rate": "0.25", "marginal_relief": true, "source_ids": ["TAX-SLABS-SALARIED"] },
+    { "min_income": "50000000", "max_income": null, "rate": "0.37", "marginal_relief": true, "source_ids": ["TAX-SLABS-SALARIED"] }
+  ],
+  "deductions": [
+    { "code": "80C", "name": "Life Insurance, PPF, ELSS", "max_limit": "150000", "allowed_in": "old", "source_ids": ["CHAPTER-VIA-DEDUCTIONS"] },
+    { "code": "80D", "name": "Health Insurance", "max_limit": "100000", "allowed_in": "old", "source_ids": ["CHAPTER-VIA-DEDUCTIONS"] },
+    { "code": "80TTA", "name": "Savings Interest", "max_limit": "10000", "allowed_in": "old", "source_ids": ["CHAPTER-VIA-DEDUCTIONS"] },
+    { "code": "24(b)", "name": "Home Loan Interest", "max_limit": "200000", "allowed_in": "old", "source_ids": ["STD-DEDUCTION-EXEMPT"] },
+    { "code": "HRA", "name": "House Rent Allowance", "metro_percentage": "0.50", "non_metro_percentage": "0.40", "allowed_in": "old", "source_ids": ["STD-DEDUCTION-EXEMPT"] }
+  ],
+  "cess": { "rate": "0.04", "source_ids": ["TAX-SLABS-SALARIED"] }
+}

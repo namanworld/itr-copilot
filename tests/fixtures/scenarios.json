@@ -1,0 +1,213 @@
+{
+  "about": {
+    "source": "Income Tax Department e-Filing portal, Income & Tax Calculator, Advance Calculator tab",
+    "url": "https://eportal.incometax.gov.in/iec/foservices/#/TaxCalc/calculator",
+    "applicable_act": "Income Tax Act 1961",
+    "assessment_year": "2026-27",
+    "fy": "2025-26",
+    "recorded_on": "2026-10-29",
+    "common_settings": {
+      "taxpayer_category": "Individual",
+      "residential_status": "Resident",
+      "age": "below 60",
+      "type_of_itr": "Other than updated return"
+    },
+    "notes": [
+      "Amounts are rupees, written as strings (ADR 0001).",
+      "expected.* values are copied from the calculator. Every one also matched a hand calculation done before entering it.",
+      "total_tax is the calculator's 'Total Tax on Income' line: tax after rebate, plus surcharge, plus cess. It excludes interest and fees.",
+      "No TDS or advance tax was entered, and the submission date field reset to 29-Oct-2026 during the session, so the PDFs show interest under 234A/234B/234C and a 234F fee. Ignore those lines; they are not part of total_tax.",
+      "The calculator takes net salary only. Where inputs.salary has a breakdown (HRA), calculator_input shows the net figure that was actually typed in.",
+      "Every total_tax here is already a multiple of 10, so these cases do not exercise section 288B rounding."
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "01-full-87a-rebate",
+      "description": "New regime: total income exactly Rs 12 lakh, so the full Rs 60,000 rebate wipes out the tax.",
+      "inputs": {
+        "salary": {"gross": "1275000"}
+      },
+      "expected": {
+        "new": {
+          "calculator_input": {"net_salary": "1275000"},
+          "standard_deduction": "75000",
+          "total_income": "1200000",
+          "tax_before_rebate": "60000",
+          "rebate_87a": "60000",
+          "surcharge": "0",
+          "cess": "0",
+          "total_tax": "0",
+          "pdf": "01-full-87a-rebate.new.pdf"
+        },
+        "old": {
+          "calculator_input": {"net_salary": "1275000"},
+          "standard_deduction": "50000",
+          "total_income": "1225000",
+          "tax_before_rebate": "180000",
+          "rebate_87a": "0",
+          "surcharge": "0",
+          "cess": "7200",
+          "total_tax": "187200",
+          "pdf": "01-full-87a-rebate.old.pdf"
+        }
+      }
+    },
+    {
+      "id": "02-87a-marginal-relief",
+      "description": "New regime: total income Rs 10,000 above Rs 12 lakh. Marginal relief caps tax before cess at the Rs 10,000 excess.",
+      "inputs": {
+        "salary": {"gross": "1285000"}
+      },
+      "expected": {
+        "new": {
+          "calculator_input": {"net_salary": "1285000"},
+          "standard_deduction": "75000",
+          "total_income": "1210000",
+          "tax_before_rebate": "61500",
+          "rebate_87a": "51500",
+          "surcharge": "0",
+          "cess": "400",
+          "total_tax": "10400",
+          "pdf": "02-87a-marginal-relief.new.pdf"
+        },
+        "old": {
+          "calculator_input": {"net_salary": "1285000"},
+          "standard_deduction": "50000",
+          "total_income": "1235000",
+          "tax_before_rebate": "183000",
+          "rebate_87a": "0",
+          "surcharge": "0",
+          "cess": "7320",
+          "total_tax": "190320",
+          "pdf": "02-87a-marginal-relief.old.pdf"
+        }
+      }
+    },
+    {
+      "id": "03-metro-hra-old-wins",
+      "description": "Rent in Mumbai with HRA, 80C and 80D. The old regime comes out Rs 6,500 cheaper.",
+      "inputs": {
+        "salary": {
+          "basic": "800000",
+          "hra_received": "450000",
+          "other_allowances": "250000",
+          "gross": "1500000"
+        },
+        "rent_paid": "540000",
+        "city": "Mumbai",
+        "metro": true,
+        "deductions": {
+          "section_80c": "150000",
+          "section_80d_self_and_family": "25000"
+        }
+      },
+      "hra_working": {
+        "hra_received": "450000",
+        "rent_minus_10_percent_of_salary": "460000",
+        "50_percent_of_salary_metro": "400000",
+        "exemption": "400000",
+        "note": "Hand-calculated; the calculator has no HRA inputs. Salary for HRA is basic only here (no DA or commission). The three limbs differ, and the metro limb is the smallest, so using 40% (Rs 3,20,000) by mistake would change the result."
+      },
+      "expected": {
+        "new": {
+          "calculator_input": {"net_salary": "1500000"},
+          "standard_deduction": "75000",
+          "total_income": "1425000",
+          "tax_before_rebate": "93750",
+          "rebate_87a": "0",
+          "surcharge": "0",
+          "cess": "3750",
+          "total_tax": "97500",
+          "pdf": "03-metro-hra-old-wins.new.pdf"
+        },
+        "old": {
+          "calculator_input": {"net_salary": "1100000", "section_80c": "150000", "section_80d": "25000"},
+          "standard_deduction": "50000",
+          "deductions_total": "175000",
+          "total_income": "875000",
+          "tax_before_rebate": "87500",
+          "rebate_87a": "0",
+          "surcharge": "0",
+          "cess": "3500",
+          "total_tax": "91000",
+          "pdf": "03-metro-hra-old-wins.old.pdf"
+        }
+      }
+    },
+    {
+      "id": "04-home-loan-above-24b-cap",
+      "description": "Rs 3 lakh interest on a self-occupied home loan. Old regime allows only Rs 2 lakh under 24(b); new regime allows none.",
+      "inputs": {
+        "salary": {"gross": "1800000"},
+        "self_occupied_home_loan_interest": "300000",
+        "deductions": {
+          "section_80c": "150000"
+        }
+      },
+      "expected": {
+        "new": {
+          "calculator_input": {"net_salary": "1800000", "self_occupied_interest": "200000", "section_80c": "150000"},
+          "standard_deduction": "75000",
+          "house_property_income": "0",
+          "deductions_total": "0",
+          "total_income": "1725000",
+          "tax_before_rebate": "145000",
+          "rebate_87a": "0",
+          "surcharge": "0",
+          "cess": "5800",
+          "total_tax": "150800",
+          "pdf": "04-home-loan-above-24b-cap.new.pdf",
+          "note": "The calculator dropped both the interest and the 80C claim by itself when switched to the new regime."
+        },
+        "old": {
+          "calculator_input": {"net_salary": "1800000", "self_occupied_interest": "200000", "section_80c": "150000"},
+          "standard_deduction": "50000",
+          "house_property_income": "-200000",
+          "deductions_total": "150000",
+          "total_income": "1400000",
+          "tax_before_rebate": "232500",
+          "rebate_87a": "0",
+          "surcharge": "0",
+          "cess": "9300",
+          "total_tax": "241800",
+          "pdf": "04-home-loan-above-24b-cap.old.pdf",
+          "note": "The calculator rejects self-occupied interest above Rs 2,00,000 with an error, so Rs 2,00,000 was typed in. The engine should receive Rs 3,00,000 and apply the cap itself."
+        }
+      }
+    },
+    {
+      "id": "05-surcharge-marginal-relief",
+      "description": "Total income just above Rs 50 lakh in both regimes. Marginal relief cuts the 10% surcharge down to the income above Rs 50 lakh.",
+      "inputs": {
+        "salary": {"gross": "5085000"}
+      },
+      "expected": {
+        "new": {
+          "calculator_input": {"net_salary": "5085000"},
+          "standard_deduction": "75000",
+          "total_income": "5010000",
+          "tax_before_rebate": "1083000",
+          "rebate_87a": "0",
+          "surcharge": "7000",
+          "cess": "43600",
+          "total_tax": "1133600",
+          "pdf": "05-surcharge-marginal-relief.new.pdf",
+          "note": "Without relief the surcharge would be Rs 1,08,300. Tax plus surcharge is capped at tax on Rs 50 lakh (Rs 10,80,000) plus the Rs 10,000 excess."
+        },
+        "old": {
+          "calculator_input": {"net_salary": "5085000"},
+          "standard_deduction": "50000",
+          "total_income": "5035000",
+          "tax_before_rebate": "1323000",
+          "rebate_87a": "0",
+          "surcharge": "24500",
+          "cess": "53900",
+          "total_tax": "1401400",
+          "pdf": "05-surcharge-marginal-relief.old.pdf",
+          "note": "Without relief the surcharge would be Rs 1,32,300. Tax plus surcharge is capped at tax on Rs 50 lakh (Rs 13,12,500) plus the Rs 35,000 excess."
+        }
+      }
+    }
+  ]
+}

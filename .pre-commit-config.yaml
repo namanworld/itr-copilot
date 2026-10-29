@@ -10,6 +10,7 @@ repos:
     rev: v6.0.0
     hooks:
       - id: check-added-large-files
+        exclude: ^tests/fixtures/(01-full-87a-rebate|02-87a-marginal-relief|03-metro-hra-old-wins|04-home-loan-above-24b-cap|05-surcharge-marginal-relief)\.(new|old)\.pdf$
       - id: detect-private-key
 
   - repo: local
