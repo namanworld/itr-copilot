@@ -316,6 +316,25 @@ def test_hra_metro_match_ignores_case_and_spaces(rules: TaxRules) -> None:
     assert hra_exemption(_renting(city="  mumbai "), rules, "old") == Decimal("400000")
 
 
+@pytest.mark.parametrize(
+    "city",
+    [
+        "Delhi",
+        "New Delhi",
+        "Mumbai",
+        "Bombay",
+        "Kolkata",
+        "Calcutta",
+        "Chennai",
+        "Madras",
+    ],
+)
+def test_hra_metro_rate_applies_to_city_names_and_aliases(
+    rules: TaxRules, city: str
+) -> None:
+    assert hra_exemption(_renting(city=city), rules, "old") == Decimal("400000")
+
+
 def test_hra_rent_limb_can_be_the_least(rules: TaxRules) -> None:
     # Rent 2,00,000 minus 80,000 = 1,20,000.
     assert hra_exemption(_renting(rent="200000"), rules, "old") == Decimal("120000")

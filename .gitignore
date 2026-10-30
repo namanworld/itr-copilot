@@ -12,7 +12,6 @@ wheels/
 
 # Secrets / Keys
 .env
-!.env.example
 
 # Test and tool caches
 .pytest_cache/
@@ -21,3 +20,6 @@ wheels/
 
 # Raw source data
 corpus/raw/
+
+# Generated synthetic datasets (rebuild with: itr synth-form16)
+data/

@@ -7,6 +7,8 @@ requires-python = ">=3.15"
 dependencies = [
     "pydantic>=2.14.1",
     "pydantic-settings>=2.16.2",
+    "pypdf>=6.21.4",
+    "reportlab>=5.1.0",
 ]
 
 [build-system]
@@ -20,6 +22,7 @@ dev = [
     "pre-commit>=4.7.0",
     "pytest>=9.2.0",
     "ruff>=0.17.3",
+    "types-reportlab>=5.0.0.20261008",
 ]
 
 [tool.importlinter]

@@ -19,8 +19,12 @@ class SalaryInput(InputModel):
 
     @model_validator(mode="after")
     def check_parts_fit_in_gross(self) -> Self:
-        parts = self.basic + self.dearness_allowance
-        +self.hra_received + self.other_allowances
+        parts = (
+            self.basic
+            + self.dearness_allowance
+            + self.hra_received
+            + self.other_allowances
+        )
         if parts > self.gross:
             raise ValueError(
                 f"salary parts add up to {parts}, more than gross {self.gross}"

@@ -85,7 +85,16 @@
         "rent_less_salary_rate": "0.10",
         "metro_salary_rate": "0.50",
         "non_metro_salary_rate": "0.40",
-        "metro_cities": ["Delhi", "Mumbai", "Kolkata", "Chennai"]
+        "metro_cities": [
+          "Delhi",
+          "New Delhi",
+          "Mumbai",
+          "Bombay",
+          "Kolkata",
+          "Calcutta",
+          "Chennai",
+          "Madras"
+        ]
       },
       "source_ids": ["HRA-RULE-2A"]
     }

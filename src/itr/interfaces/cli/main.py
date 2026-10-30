@@ -12,8 +12,10 @@ from itr.domain.computation import Comparison, Computation
 from itr.domain.inputs import TaxInput
 from itr.domain.rules import TaxRules
 from itr.domain.tax import compare
+from itr.infrastructure.pdf.form16_renderer import render_form16
 from itr.infrastructure.rules.json_loader import load_rules
 from itr.settings import get_settings
+from itr.synthetic.form16_generator import generate
 
 
 def format_inr(amount: Decimal) -> str:
@@ -272,6 +274,52 @@ def run_compute(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- itr synth-form16 ---------------
+
+
+def _positive(text: str) -> int:
+    number = int(text)
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return number
+
+
+def run_synth_form16(args: argparse.Namespace) -> int:
+    """Write n synthetic Form 16s: a PDF, its truth JSON and the user's facts."""
+
+    try:
+        rules = load_rules(args.fy)
+    except (OSError, ValueError) as error:
+        print(f"itr: {error}", file=sys.stderr)
+        return 1
+
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    width = max(3, len(str(args.n)))
+    manifest = []
+
+    for index in range(args.n):
+        seed = args.seed + index
+        form16, extras = generate(seed, rules)
+        name = f"F{index + 1:0{width}d}"
+        (out / f"{name}.pdf").write_bytes(render_form16(form16))
+        (out / f"{name}.truth.json").write_text(
+            form16.model_dump_json(indent=2) + "\n", encoding="utf-8"
+        )
+        (out / f"{name}.user.json").write_text(
+            extras.model_dump_json(indent=2) + "\n", encoding="utf-8"
+        )
+        manifest.append({"file": name, "seed": seed})
+
+    (out / "manifest.json").write_text(
+        json.dumps({"fy": args.fy, "cases": manifest}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    last = args.seed + args.n - 1
+    print(f"Wrote {args.n} synthetic Form 16s (seeds {args.seed} to {last}) to {out}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="itr")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -288,6 +336,15 @@ def main(argv: list[str] | None = None) -> int:
     source.add_argument("--input", help="a JSON file shaped like a scenario's inputs")
     compute_cmd.add_argument("--fy", default="2025-26", help="financial year")
 
+    # ---- itr synth-form16 ------
+    synth_cmd = commands.add_parser(
+        "synth-form16", help="write synthetic Form 16 PDFs with truth JSON"
+    )
+    synth_cmd.add_argument("--n", type=_positive, default=20, help="how many")
+    synth_cmd.add_argument("--seed", type=int, default=42, help="first seed")
+    synth_cmd.add_argument("--out", default="data/form16", help="output folder")
+    synth_cmd.add_argument("--fy", default="2025-26", help="financial year")
+
     args = parser.parse_args(argv)
 
     if args.command == "rules":
@@ -303,8 +360,10 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
         print_rules(rules)
-    if args.command == "compute":
+    elif args.command == "compute":
         return run_compute(args)
+    elif args.command == "synth-form16":
+        return run_synth_form16(args)
 
     return 0
 
