@@ -6,7 +6,7 @@ drift apart.
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from itr.domain.form16 import (
     ChapterVIA,
@@ -188,7 +188,9 @@ def form16_from_inputs(
             tax_on_total_income=tax.tax_on_total_income,
             rebate_87a=tax.rebate_87a,
             surcharge=tax.surcharge,
-            health_and_education_cess=tax.cess,
+            health_and_education_cess=tax.cess.quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            ),
             tax_payable=tax.tax_payable,
             relief_section_89=ZERO,
             tds_form_12baa=ZERO,

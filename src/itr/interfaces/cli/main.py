@@ -8,13 +8,23 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from itr.application.extract_form16_v2 import (
+    NOT_EXTRACTED,
+    Form16ValidationError,
+    extract_form16,
+)
+from itr.application.form16_diff import diff_form16
+from itr.application.ports import LLMClient, LLMOutputError, LLMUsage
 from itr.domain.computation import Comparison, Computation
+from itr.domain.form16 import Form16
 from itr.domain.inputs import TaxInput
 from itr.domain.rules import TaxRules
 from itr.domain.tax import compare
+from itr.infrastructure.llm.anthropic_client import AnthropicLLM
 from itr.infrastructure.pdf.form16_renderer import render_form16
+from itr.infrastructure.pdf.pdf_to_text import NoTextLayerError, pdf_to_text
 from itr.infrastructure.rules.json_loader import load_rules
-from itr.settings import get_settings
+from itr.settings import Settings, get_settings
 from itr.synthetic.form16_generator import generate
 
 
@@ -171,6 +181,80 @@ def format_amount(amount: Decimal) -> str:
         paise = paise.quantize(Decimal(1))
     text = format_inr(abs(paise))
     return f"-{text}" if paise < 0 else text
+
+
+# --- itr extract ---------------------------------------------------------------
+
+
+def make_llm(settings: Settings, use_disk_cache: bool) -> LLMClient:
+    """The real Claude client. Tests replace this function with a fake."""
+    cache_dir = settings.llm_cache_dir if use_disk_cache else None
+    return AnthropicLLM(settings, cache_dir=cache_dir)
+
+
+def format_usage(usage: LLMUsage) -> str:
+    line = (
+        f"Cost: ${usage.cost_usd:.6f} (input {usage.input_tokens}, "
+        f"output {usage.output_tokens}, cache write {usage.cache_write_tokens}, "
+        f"cache read {usage.cache_read_tokens} tokens)"
+    )
+    if usage.from_disk_cache:
+        line += " - from the disk cache, not charged this time"
+    return line
+
+
+def load_truth(pdf: Path) -> Form16 | None:
+    """F001.pdf's truth is F001.truth.json, if it exists. Reads both the plain
+    Form16 format and the tagged {"tag": ..., "form16": ...} envelope."""
+    path = pdf.with_name(f"{pdf.stem}.truth.json")
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if "tag" in data:
+        data = data["form16"]
+    return None if data is None else Form16.model_validate(data)
+
+
+def run_extract(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    pdf = Path(args.pdf)
+    try:
+        text = pdf_to_text(pdf)
+        system_prompt = (settings.prompts_dir / "extract_form16_v2.md").read_text(
+            encoding="utf-8"
+        )
+    except (OSError, NoTextLayerError) as error:
+        print(f"itr: {error}", file=sys.stderr)
+        return 1
+    if not settings.anthropic_api_key:
+        print("itr: set ANTHROPIC_API_KEY in .env", file=sys.stderr)
+        return 1
+
+    llm = make_llm(settings, use_disk_cache=not args.no_cache)
+    try:
+        extraction = extract_form16(text, llm, system_prompt)
+    except Form16ValidationError as error:
+        print("itr: the extracted Form 16 failed validation:", file=sys.stderr)
+        for problem in error.problems:
+            print(f"  {problem}", file=sys.stderr)
+        return 1
+    except LLMOutputError as error:
+        print(f"itr: {error}", file=sys.stderr)
+        return 1
+
+    print(extraction.form16.model_dump_json(indent=2))
+    print(format_usage(extraction.usage))
+
+    truth = load_truth(pdf)
+    if truth is not None:
+        diff = diff_form16(truth, extraction.form16, skip=NOT_EXTRACTED)
+        print(f"Truth: {diff.matched}/{diff.compared} fields match")
+        for mismatch in diff.mismatches:
+            print(
+                f"  {mismatch.path}: expected {mismatch.expected}, "
+                f"got {mismatch.actual}"
+            )
+    return 0
 
 
 # One row per line of the sheet: (label, how to read it from a Computation).
@@ -345,6 +429,15 @@ def main(argv: list[str] | None = None) -> int:
     synth_cmd.add_argument("--out", default="data/form16", help="output folder")
     synth_cmd.add_argument("--fy", default="2025-26", help="financial year")
 
+    # ---- itr extract ------
+    extract_cmd = commands.add_parser(
+        "extract", help="read a Form 16 PDF with Claude and print it as JSON"
+    )
+    extract_cmd.add_argument("pdf", help="path to the Form 16 PDF")
+    extract_cmd.add_argument(
+        "--no-cache", action="store_true", help="ignore saved responses"
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "rules":
@@ -364,6 +457,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_compute(args)
     elif args.command == "synth-form16":
         return run_synth_form16(args)
+    elif args.command == "extract":
+        return run_extract(args)
 
     return 0
 

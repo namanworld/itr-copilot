@@ -2,7 +2,7 @@
 
 import json
 import re
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 import pytest
@@ -50,7 +50,9 @@ def test_tax_lines_equal_compute(rules: TaxRules) -> None:
         assert lines.tax_on_total_income == tax.tax_on_total_income, seed
         assert lines.rebate_87a == tax.rebate_87a, seed
         assert lines.surcharge == tax.surcharge, seed
-        assert lines.health_and_education_cess == tax.cess, seed
+        assert lines.health_and_education_cess == (
+            tax.cess.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        ), seed
         assert lines.tax_payable == tax.tax_payable, seed
 
 
