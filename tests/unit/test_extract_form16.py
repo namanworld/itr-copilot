@@ -9,7 +9,7 @@ from typing import Any, get_args
 import pytest
 from pydantic import TypeAdapter
 
-from itr.application.extract_form16_v2 import (
+from itr.application.extract_form16 import (
     AMOUNT_LINES,
     BREAKUP_LINES,
     DEDUCTION_LINES,
@@ -19,14 +19,14 @@ from itr.application.extract_form16_v2 import (
     to_form16,
 )
 from itr.application.form16_diff import diff_form16
-from itr.application.form16_extraction_v2 import ExtractedForm16, LineId, Row
+from itr.application.form16_extraction import ExtractedForm16, LineId, Row
 from itr.domain.form16 import Form16
 from itr.domain.rules import TaxRules
 from itr.synthetic.form16_generator import generate
 from tests.fakes import FakeLLM, perfect_extraction
 
 ROOT = Path(__file__).parents[2]
-PROMPT = (ROOT / "prompts/extract_form16_v2.md").read_text(encoding="utf-8")
+PROMPT = (ROOT / "prompts/extract_form16.md").read_text(encoding="utf-8")
 
 
 @pytest.fixture(scope="module")

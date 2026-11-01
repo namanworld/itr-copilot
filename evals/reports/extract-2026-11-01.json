@@ -1,0 +1,483 @@
+{
+  "date": "2026-11-01",
+  "model": "claude-haiku-5-5",
+  "prompt": "<!-- extract_form16 v5: layout-preserved text",
+  "folder": "data/form16",
+  "skipped": [],
+  "documents": 20,
+  "documents_extracted": 20,
+  "documents_fully_correct": 20,
+  "fully_correct_share": 1.0,
+  "field_accuracy": {
+    "part_a.assessment_year": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_a.certificate_number": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_a.employee_address": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_a.employee_name": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_a.employee_pan": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_a.employer_address": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_a.employer_name": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_a.employer_pan": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_a.employer_tan": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_a.period_from": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_a.period_to": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_a.total_amount_paid_or_credited": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_a.total_tax_deducted": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_a.total_tax_deposited": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.aggregate": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.other_total": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80c.deductible": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80c.gross": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80c.qualifying": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80ccc.deductible": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80ccc.gross": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80ccc.qualifying": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80ccd_1.deductible": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80ccd_1.gross": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80ccd_1.qualifying": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80ccd_1b.deductible": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80ccd_1b.gross": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80ccd_1b.qualifying": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80ccd_2.deductible": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80ccd_2.gross": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80ccd_2.qualifying": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80cch_employee.deductible": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80cch_employee.gross": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80cch_employee.qualifying": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80cch_government.deductible": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80cch_government.gross": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80cch_government.qualifying": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80d.deductible": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80d.gross": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80d.qualifying": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80e.deductible": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80e.gross": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80e.qualifying": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80g.deductible": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80g.gross": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80g.qualifying": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80tta.deductible": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80tta.gross": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.section_80tta.qualifying": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.total_80c_80ccc_80ccd_1.deductible": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.total_80c_80ccc_80ccd_1.gross": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.chapter_via.total_80c_80ccc_80ccd_1.qualifying": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.gross_salary.other_employers": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.gross_salary.section_17_1": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.gross_salary.section_17_2": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.gross_salary.section_17_3": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.gross_salary.total": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.gross_total_income": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.income_under_salaries": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.opted_out_of_new_regime": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.other_income.house_property": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.other_income.other_sources": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.other_income.total": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.salary_from_current_employer": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.section_10.commuted_pension_10_10a": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.section_10.gratuity_10_10": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.section_10.house_rent_allowance_10_13a": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.section_10.leave_encashment_10_10aa": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.section_10.other_total": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.section_10.special_allowances_10_14": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.section_10.total": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.section_10.travel_concession_10_5": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.section_16.entertainment_allowance_16_ii": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.section_16.standard_deduction_16_ia": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.section_16.tax_on_employment_16_iii": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.section_16.total": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.tax.health_and_education_cess": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.tax.net_tax_payable": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.tax.rebate_87a": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.tax.relief_section_89": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.tax.surcharge": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.tax.tax_on_total_income": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.tax.tax_payable": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.tax.tcs_form_12baa": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.tax.tds_form_12baa": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "part_b.tax.total_taxable_income": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "salary_breakup.basic": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "salary_breakup.dearness_allowance": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "salary_breakup.dearness_allowance_counts_for_retirement": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "salary_breakup.house_rent_allowance": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    },
+    "salary_breakup.other_allowances": {
+      "correct": 20,
+      "documents": 20,
+      "accuracy": 1.0
+    }
+  },
+  "fields_below_100_percent": [],
+  "failures": [],
+  "failed_extractions": [],
+  "cost": {
+    "total_usd": "0.035659",
+    "average_usd_per_document": "0.001783",
+    "charged_this_run_usd": "0.033146",
+    "documents_from_disk_cache": 1,
+    "tokens": {
+      "input": 44355,
+      "output": 57467,
+      "cache_write": 7904,
+      "cache_read": 150176
+    }
+  }
+}

@@ -2,13 +2,19 @@ import argparse
 import json
 import sys
 from collections.abc import Callable
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
-from itr.application.extract_form16_v2 import (
+from itr.application.extract_eval import (
+    DocumentResult,
+    build_report,
+    evaluate_document,
+)
+from itr.application.extract_form16 import (
     NOT_EXTRACTED,
     Form16ValidationError,
     extract_form16,
@@ -220,7 +226,7 @@ def run_extract(args: argparse.Namespace) -> int:
     pdf = Path(args.pdf)
     try:
         text = pdf_to_text(pdf)
-        system_prompt = (settings.prompts_dir / "extract_form16_v2.md").read_text(
+        system_prompt = (settings.prompts_dir / "extract_form16.md").read_text(
             encoding="utf-8"
         )
     except (OSError, NoTextLayerError) as error:
@@ -404,6 +410,78 @@ def run_synth_form16(args: argparse.Namespace) -> int:
     return 0
 
 
+# ------- eval-extract ------------------------------------------------------------
+
+
+def run_eval_extract(args: argparse.Namespace) -> int:
+    """Extract every PDF in a folder, score it against its truth file and
+    write a dated JSON report."""
+    settings = get_settings()
+    folder = Path(args.folder)
+    pdfs = sorted(folder.glob("*.pdf"))
+    if not pdfs:
+        print(f"itr: no PDFs in {folder}", file=sys.stderr)
+        return 1
+    try:
+        system_prompt = (settings.prompts_dir / "extract_form16.md").read_text(
+            encoding="utf-8"
+        )
+    except OSError as error:
+        print(f"itr: {error}", file=sys.stderr)
+        return 1
+    if not settings.anthropic_api_key:
+        print("itr: set ANTHROPIC_API_KEY in .env", file=sys.stderr)
+        return 1
+
+    llm = make_llm(settings, use_disk_cache=not args.no_cache)
+    results: list[DocumentResult] = []
+    skipped: list[str] = []
+    for pdf in pdfs:
+        truth = load_truth(pdf)
+        if truth is None:  # no truth file, or the truth says it isn't a Form 16
+            skipped.append(pdf.name)
+            continue
+        try:
+            text = pdf_to_text(pdf)
+        except NoTextLayerError as error:
+            print(f"itr: {pdf.name}: {error}", file=sys.stderr)
+            skipped.append(pdf.name)
+            continue
+        result = evaluate_document(pdf.stem, text, truth, llm, system_prompt)
+        mark = "ok" if result.extracted and not result.mismatches else "FAIL"
+        print(f"{pdf.stem}: {mark}")
+        results.append(result)
+
+    today = date.today().isoformat()
+    report = build_report(
+        results,
+        {
+            "date": today,
+            "model": settings.claude_model,
+            "prompt": system_prompt.splitlines()[0] if system_prompt else "",
+            "folder": str(folder),
+            "skipped": skipped,
+        },
+    )
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"extract-{today}.json"
+    path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+    print(
+        f"{report['documents_fully_correct']}/{report['documents']} documents "
+        f"fully correct; {len(report['failures'])} field mismatches; "
+        f"{len(report['failed_extractions'])} failed extractions"
+    )
+    cost = report["cost"]
+    print(
+        f"Cost: ${cost['total_usd']} total, ${cost['average_usd_per_document']} "
+        f"per document; charged this run: ${cost['charged_this_run_usd']}"
+    )
+    print(f"Report: {path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="itr")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -438,6 +516,25 @@ def main(argv: list[str] | None = None) -> int:
         "--no-cache", action="store_true", help="ignore saved responses"
     )
 
+    # ---- itr eval-extract ------
+    eval_cmd = commands.add_parser(
+        "eval-extract",
+        help="""
+        extract every Form 16 PDF in a folder and score it against its truth,
+        score extraction on a folder of PDFs with truth files""",
+    )
+    eval_cmd.add_argument(
+        "folder", help="path to a folder of Form 16 PDFs, e.g. data/form16"
+    )
+    eval_cmd.add_argument(
+        "--out",
+        default="evals/reports",
+        help="folder to write the JSON report to",
+    )
+    eval_cmd.add_argument(
+        "--no-cache", action="store_true", help="ignore saved responses"
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "rules":
@@ -459,6 +556,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_synth_form16(args)
     elif args.command == "extract":
         return run_extract(args)
+    elif args.command == "eval-extract":
+        return run_eval_extract(args)
 
     return 0
 

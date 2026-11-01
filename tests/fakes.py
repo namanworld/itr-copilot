@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
-from itr.application.form16_extraction_v2 import (
+from itr.application.form16_extraction import (
     Column,
     ExtractedForm16,
     ExtractedIdentity,
@@ -15,14 +15,6 @@ from itr.application.form16_extraction_v2 import (
 )
 from itr.application.ports import LLMResult, LLMUsage
 from itr.domain.form16 import DeductionLine, Form16
-
-FAKE_USAGE = LLMUsage(
-    input_tokens=0,
-    output_tokens=0,
-    cache_write_tokens=0,
-    cache_read_tokens=0,
-    cost_usd=Decimal(0),
-)
 
 
 @dataclass(frozen=True)
@@ -42,6 +34,14 @@ class FakeLLM:
 
     answers: list[BaseModel]
     calls: list[FakeCall] = field(default_factory=list)
+    usage = LLMUsage(
+        input_tokens=0,
+        output_tokens=0,
+        cache_write_tokens=0,
+        cache_read_tokens=0,
+        cost_usd=Decimal("0.00"),
+        from_disk_cache=False,
+    )
 
     def structured[T: BaseModel](
         self, system: str, prompt: str, output_model: type[T]
@@ -55,7 +55,7 @@ class FakeLLM:
                 f"FakeLLM answer is {type(answer).__name__}, "
                 f"but the call asked for {output_model.__name__}"
             )
-        return LLMResult(output=answer, usage=FAKE_USAGE)
+        return LLMResult(output=answer, usage=self.usage)
 
 
 def _amount(value: Decimal) -> str:

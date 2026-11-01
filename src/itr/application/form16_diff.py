@@ -50,6 +50,13 @@ def _skipped(path: str, skip: tuple[str, ...]) -> bool:
     )
 
 
+def field_paths(form16: Form16, skip: tuple[str, ...] = ()) -> list[str]:
+    """Every compared field of a Form16, as dotted paths, except under `skip`."""
+    return sorted(
+        path for path in _leaves(form16.model_dump()) if not _skipped(path, skip)
+    )
+
+
 def diff_form16(
     truth: Form16, extracted: Form16, skip: tuple[str, ...] = ()
 ) -> Form16Diff:
