@@ -1,6 +1,7 @@
 import argparse
 import json
 import sys
+from collections import Counter
 from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
@@ -11,12 +12,14 @@ from pydantic import ValidationError
 
 from itr.application.extract_eval import (
     DocumentResult,
+    Refusal,
     build_report,
     evaluate_document,
 )
 from itr.application.extract_form16 import (
     NOT_EXTRACTED,
     Form16ValidationError,
+    NotAForm16Error,
     extract_form16,
 )
 from itr.application.form16_diff import diff_form16
@@ -31,6 +34,7 @@ from itr.infrastructure.pdf.form16_renderer import render_form16
 from itr.infrastructure.pdf.pdf_to_text import NoTextLayerError, pdf_to_text
 from itr.infrastructure.rules.json_loader import load_rules
 from itr.settings import Settings, get_settings
+from itr.synthetic.dataset import build_eval_dataset, render_case
 from itr.synthetic.form16_generator import generate
 
 
@@ -221,6 +225,33 @@ def load_truth(pdf: Path) -> Form16 | None:
     return None if data is None else Form16.model_validate(data)
 
 
+# How a truth file's refusal reason is scored: what the model must do.
+REFUSALS: dict[str, Refusal] = {
+    "not_a_form16": "not_a_form16",  # say document_type is "other"
+    "capital_gains": "unsupported_items",  # report the capital gains
+}
+
+
+def load_case(pdf: Path) -> tuple[Form16 | None, Refusal | None] | None:
+    """The truth for F001.pdf and how it should be refused, if at all; None
+    when there is no truth file. A plain Form16 file should be extracted. A
+    tagged {"tag": ..., "form16": ...} file says whether to refuse, and its
+    form16 is null for a document that isn't a Form 16."""
+    path = pdf.with_name(f"{pdf.stem}.truth.json")
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if "tag" not in data:
+        return Form16.model_validate(data), None
+    tag = data["tag"]
+    form16 = None if data["form16"] is None else Form16.model_validate(data["form16"])
+    if tag["expected"] != "refuse":
+        return form16, None
+    if tag["reason"] not in REFUSALS:
+        raise ValueError(f"{path.name}: unknown refusal reason {tag['reason']!r}")
+    return form16, REFUSALS[tag["reason"]]
+
+
 def run_extract(args: argparse.Namespace) -> int:
     settings = get_settings()
     pdf = Path(args.pdf)
@@ -239,6 +270,9 @@ def run_extract(args: argparse.Namespace) -> int:
     llm = make_llm(settings, use_disk_cache=not args.no_cache)
     try:
         extraction = extract_form16(text, llm, system_prompt)
+    except NotAForm16Error:
+        print("itr: this document is not a Form 16; nothing extracted", file=sys.stderr)
+        return 1
     except Form16ValidationError as error:
         print("itr: the extracted Form 16 failed validation:", file=sys.stderr)
         for problem in error.problems:
@@ -250,6 +284,11 @@ def run_extract(args: argparse.Namespace) -> int:
 
     print(extraction.form16.model_dump_json(indent=2))
     print(format_usage(extraction.usage))
+    for item in extraction.form16.unrecognised_lines:
+        print(
+            f"Unsupported: {item.description} ({item.amount}) in {item.where}; "
+            "tax can't be computed from this Form 16"
+        )
 
     truth = load_truth(pdf)
     if truth is not None:
@@ -413,6 +452,61 @@ def run_synth_form16(args: argparse.Namespace) -> int:
 # ------- eval-extract ------------------------------------------------------------
 
 
+def print_result(result: DocumentResult) -> None:
+    """One line per document, with the reason when it isn't fully correct."""
+    if result.fully_correct:
+        refused = f" (refused: {result.refusal})" if result.refusal else ""
+        print(f"{result.name}: ok{refused}")
+        return
+    reasons: list[str] = []
+    if not result.refusal_correct:
+        reasons.append(
+            f"refusal expected {result.expected_refusal}, got {result.refusal}"
+        )
+    if not result.extracted and result.error:
+        reasons.append(result.error.splitlines()[0])
+        reasons += list(result.problems)
+    elif result.mismatches:
+        reasons += [
+            f"{m.path}: expected {m.expected}, got {m.actual}"
+            for m in result.mismatches
+        ]
+    print(f"{result.name}: FAIL")
+    for reason in reasons:
+        print(f"    {reason}")
+
+
+def run_synth_eval(args: argparse.Namespace) -> int:
+    """Write the evaluation set: normal, hard and out-of-scope documents, each
+    with a PDF, a tagged truth file, the user's facts and a manifest line."""
+    try:
+        rules = load_rules(args.fy)
+    except (OSError, ValueError) as error:
+        print(f"itr: {error}", file=sys.stderr)
+        return 1
+
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    cases = build_eval_dataset(args.seed, rules)
+    for case in cases:
+        name = case.tag.case_id
+        (out / f"{name}.pdf").write_bytes(render_case(case))
+        (out / f"{name}.truth.json").write_text(
+            case.truth.model_dump_json(indent=2) + "\n", encoding="utf-8"
+        )
+        (out / f"{name}.user.json").write_text(
+            case.extras.model_dump_json(indent=2) + "\n", encoding="utf-8"
+        )
+    manifest = {"fy": args.fy, "cases": [c.tag.model_dump(mode="json") for c in cases]}
+    (out / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
+    counts = Counter(case.tag.category for case in cases)
+    summary = ", ".join(f"{count} {category}" for category, count in counts.items())
+    print(f"Wrote {len(cases)} evaluation cases ({summary}) to {out}")
+    return 0
+
+
 def run_eval_extract(args: argparse.Namespace) -> int:
     """Extract every PDF in a folder, score it against its truth file and
     write a dated JSON report."""
@@ -437,19 +531,21 @@ def run_eval_extract(args: argparse.Namespace) -> int:
     results: list[DocumentResult] = []
     skipped: list[str] = []
     for pdf in pdfs:
-        truth = load_truth(pdf)
-        if truth is None:  # no truth file, or the truth says it isn't a Form 16
+        case = load_case(pdf)
+        if case is None:  # no truth file
             skipped.append(pdf.name)
             continue
+        truth, expected_refusal = case
         try:
             text = pdf_to_text(pdf)
         except NoTextLayerError as error:
             print(f"itr: {pdf.name}: {error}", file=sys.stderr)
             skipped.append(pdf.name)
             continue
-        result = evaluate_document(pdf.stem, text, truth, llm, system_prompt)
-        mark = "ok" if result.extracted and not result.mismatches else "FAIL"
-        print(f"{pdf.stem}: {mark}")
+        result = evaluate_document(
+            pdf.stem, text, truth, llm, system_prompt, expected_refusal
+        )
+        print_result(result)
         results.append(result)
 
     today = date.today().isoformat()
@@ -468,10 +564,13 @@ def run_eval_extract(args: argparse.Namespace) -> int:
     path = out / f"extract-{today}.json"
     path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
+    refusals = report["refusals"]
     print(
         f"{report['documents_fully_correct']}/{report['documents']} documents "
         f"fully correct; {len(report['failures'])} field mismatches; "
-        f"{len(report['failed_extractions'])} failed extractions"
+        f"{len(report['failed_extractions'])} failed extractions; "
+        f"refusals {refusals['correct']}/{refusals['expected']} correct, "
+        f"{len(refusals['false'])} false"
     )
     cost = report["cost"]
     print(
@@ -517,6 +616,16 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # ---- itr eval-extract ------
+    synth_eval_cmd = commands.add_parser(
+        "synth-eval",
+        help="write the evaluation set: normal, hard and out-of-scope PDFs",
+    )
+    synth_eval_cmd.add_argument("--seed", type=int, default=42, help="first seed")
+    synth_eval_cmd.add_argument(
+        "--out", default="data/form16-eval", help="output folder"
+    )
+    synth_eval_cmd.add_argument("--fy", default="2025-26", help="financial year")
+
     eval_cmd = commands.add_parser(
         "eval-extract",
         help="""
@@ -556,6 +665,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_synth_form16(args)
     elif args.command == "extract":
         return run_extract(args)
+    elif args.command == "synth-eval":
+        return run_synth_eval(args)
     elif args.command == "eval-extract":
         return run_eval_extract(args)
 

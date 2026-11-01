@@ -120,7 +120,20 @@ class Row(Extracted):
     amount: AmountText
 
 
+class UnsupportedItem(Extracted):
+    """An amount printed on the document that no row line covers, such as
+    capital gains the employee declared to the employer."""
+
+    where: str = Field(description="where it is printed, e.g. the annexure title")
+    description: str
+    amount: AmountText
+
+
 class ExtractedForm16(Extracted):
+    document_type: Literal["form16", "other"] = Field(
+        description="form16 only for a certificate of TDS on salary (Form No. 16); "
+        "other for anything else, such as a payslip or a bank statement"
+    )
     identity: ExtractedIdentity
     opted_out_of_new_regime: YesNo = Field(
         description="Answer to 'Whether opting out of taxation u/s 115BAC(1A)?'"
@@ -128,6 +141,9 @@ class ExtractedForm16(Extracted):
     salary_breakup_printed: bool
     dearness_allowance_counts_for_retirement: Literal["YES", "NO", "NOT_STATED"]
     rows: list[Row]
+    unsupported_items: list[UnsupportedItem] = Field(
+        description="income or amounts printed that no row line covers"
+    )
     needs_review: list[str] = Field(
         description="each field or line that couldn't be read reliably, and why"
     )

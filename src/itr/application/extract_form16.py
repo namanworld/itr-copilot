@@ -18,13 +18,15 @@ from itr.application.form16_extraction import ExtractedForm16, Row
 from itr.application.ports import LLMClient, LLMUsage
 from itr.domain.form16 import Form16
 
-# Fields of the domain Form16 that the extraction doesn't read. They are
-# always empty in an extracted Form16, and a diff against truth skips them.
+# Fields of the domain Form16 that the extraction doesn't read, or reads in
+# its own words, so a diff against truth skips them. "[*]" matches any index:
+# an unsupported item's amount is scored, its wording isn't.
 NOT_EXTRACTED = (
     "part_a.quarters",
     "part_b.section_10.other",
     "part_b.chapter_via.other",
-    "unrecognised_lines",
+    "unrecognised_lines[*].where",
+    "unrecognised_lines[*].description",
 )
 
 # Chapter VI-A totals with a single amount. Their labels say "deductible", so
@@ -112,6 +114,15 @@ class Form16ValidationError(Exception):
         self.usage = usage
 
 
+class NotAForm16Error(Exception):
+    """The model says the document isn't a Form 16, e.g. a payslip."""
+
+    def __init__(self, extracted: ExtractedForm16, usage: LLMUsage | None = None):
+        super().__init__("the document is not a Form 16")
+        self.extracted = extracted
+        self.usage = usage
+
+
 @dataclass(frozen=True)
 class Form16Extraction:
     form16: Form16
@@ -126,6 +137,8 @@ def extract_form16(text: str, llm: LLMClient, system_prompt: str) -> Form16Extra
     result = llm.structured(system_prompt, prompt, ExtractedForm16)
     try:
         form16 = to_form16(result.output)
+    except NotAForm16Error as error:
+        raise NotAForm16Error(error.extracted, usage=result.usage) from error
     except Form16ValidationError as error:
         raise Form16ValidationError(
             error.extracted, error.problems, usage=result.usage
@@ -181,7 +194,14 @@ def _put(data: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
 
 def to_form16(extracted: ExtractedForm16) -> Form16:
     """Build the domain Form16 from the rows. Raises Form16ValidationError
-    listing every problem with the rows or with the resulting values."""
+    listing every problem with the rows or with the resulting values, or
+    NotAForm16Error when the model says the document isn't a Form 16.
+
+    Unsupported items become the Form16's unrecognised_lines, which make
+    to_tax_input refuse to compute (ADR 0004).
+    """
+    if extracted.document_type != "form16":
+        raise NotAForm16Error(extracted)
     problems = _row_problems(extracted)
     if problems:
         raise Form16ValidationError(extracted, problems)
@@ -218,6 +238,11 @@ def to_form16(extracted: ExtractedForm16) -> Form16:
                 None if counts == "NOT_STATED" else counts == "YES"
             )
         }
+
+    data["unrecognised_lines"] = [
+        {"where": item.where, "description": item.description, "amount": item.amount}
+        for item in extracted.unsupported_items
+    ]
 
     try:
         return Form16.model_validate(data)

@@ -6,7 +6,7 @@ text, or the PDF has no text layer at all, a perfect extraction is impossible.
 
 import json
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
@@ -16,8 +16,16 @@ from typing import Any
 import pytest
 from pypdf import PdfReader
 
+from itr.domain.form16 import Form16
 from itr.domain.rules import TaxRules
-from itr.infrastructure.pdf.form16_renderer import render_form16
+from itr.infrastructure.pdf.form16_renderer import (
+    WATERMARK,
+    NumberFormat,
+    format_amount,
+    render_form16,
+)
+from itr.infrastructure.pdf.form16_statement import render_form16_statement
+from itr.synthetic.dataset import _with_capital_gains
 from itr.synthetic.form16_generator import generate
 
 ROOT = Path(__file__).parents[2]
@@ -36,10 +44,26 @@ def extract_text(pdf: bytes) -> str:
 
 
 def normalise(text: str) -> str:
-    """Drop the digit-grouping commas and collapse whitespace, so a value
-    wrapped onto two lines or printed as 15,00,000 still matches."""
+    """Reduce every number format to plain digits and collapse whitespace, so
+    ₹15,00,000, Rs. 15,00,000, 1500000.00 and a value wrapped onto two lines
+    all match 1500000."""
+    text = text.replace("₹", "").replace("Rs.", "")
     text = re.sub(r"(?<=\d),(?=\d)", "", text)
+    text = re.sub(r"(?<=\d)\.00(?!\d)", "", text)
     return re.sub(r"\s+", " ", text)
+
+
+# Every way a Form 16 can be drawn: (layout name, render function).
+FORMATS: list[NumberFormat] = [
+    "indian_grouping",
+    "rupee_symbol",
+    "plain_decimal",
+    "rs_prefix",
+]
+RENDERERS = [("standard", render_form16)] + [
+    (f"statement-{fmt}", lambda f, fmt=fmt: render_form16_statement(f, fmt))
+    for fmt in FORMATS
+]
 
 
 def truth_values(node: Any, path: str = "") -> Iterator[tuple[str, str]]:
@@ -82,10 +106,15 @@ def test_pdf_has_a_text_layer(rules: TaxRules) -> None:
     assert len(text) > 1000
 
 
+@pytest.mark.parametrize(("layout", "render"), RENDERERS, ids=[n for n, _ in RENDERERS])
 @pytest.mark.parametrize("seed", SEEDS)
-def test_every_truth_value_is_in_the_text(rules: TaxRules, seed: int) -> None:
+def test_every_truth_value_is_in_the_text(
+    rules: TaxRules, seed: int, layout: str, render: Callable[[Form16], bytes]
+) -> None:
     form16, _ = generate(seed, rules)
-    text = normalise(extract_text(render_form16(form16)))
+    if seed % 5 == 0:  # some cases carry an unrecognised line too
+        form16 = _with_capital_gains(form16, seed)
+    text = normalise(extract_text(render(form16)))
     truth = json.loads(form16.model_dump_json())
 
     missing = [
@@ -96,15 +125,51 @@ def test_every_truth_value_is_in_the_text(rules: TaxRules, seed: int) -> None:
     assert missing == []
 
 
-def test_rendering_is_reproducible(rules: TaxRules) -> None:
+@pytest.mark.parametrize(("layout", "render"), RENDERERS, ids=[n for n, _ in RENDERERS])
+def test_rendering_is_reproducible(
+    rules: TaxRules, layout: str, render: Callable[[Form16], bytes]
+) -> None:
     form16, _ = generate(7, rules)
-    assert render_form16(form16) == render_form16(form16)
+    assert render(form16) == render(form16)
 
 
-def test_pdf_is_marked_synthetic(rules: TaxRules) -> None:
+@pytest.mark.parametrize(("layout", "render"), RENDERERS, ids=[n for n, _ in RENDERERS])
+def test_pdf_is_marked_synthetic(
+    rules: TaxRules, layout: str, render: Callable[[Form16], bytes]
+) -> None:
     form16, _ = generate(3, rules)
-    text = extract_text(render_form16(form16))
+    text = extract_text(render(form16))
     assert "SYNTHETIC SPECIMEN" in text
+
+
+@pytest.mark.parametrize(
+    ("number_format", "expected"),
+    [
+        ("indian_grouping", "12,34,567"),
+        ("rupee_symbol", "₹12,34,567"),
+        ("plain_decimal", "1234567.00"),
+        ("rs_prefix", "Rs. 12,34,567"),
+    ],
+)
+def test_number_formats(number_format: NumberFormat, expected: str) -> None:
+    assert format_amount(Decimal(1234567), number_format) == expected
+
+
+def test_number_formats_keep_paise_and_sign() -> None:
+    amount = Decimal("-200000.50")
+    assert format_amount(amount) == "-2,00,000.50"
+    assert format_amount(amount, "rupee_symbol") == "-₹2,00,000.50"
+    assert format_amount(amount, "plain_decimal") == "-200000.50"
+    assert format_amount(amount, "rs_prefix") == "Rs. -2,00,000.50"
+    assert format_amount(None, "rupee_symbol") == ""
+
+
+def test_rupee_sign_is_in_the_text_layer(rules: TaxRules) -> None:
+    """Helvetica has no ₹, so this checks the bundled font is used: with a
+    font that lacks the glyph, the sign is lost from the text."""
+    form16, _ = generate(1, rules)
+    text = extract_text(render_form16_statement(form16, "rupee_symbol"))
+    assert f"₹{format_amount(form16.part_b.gross_salary.total)}" in text
 
 
 # --- Each value is on the right line ------------------------------------------
@@ -227,3 +292,47 @@ def test_each_amount_is_on_its_own_line(rules: TaxRules, seed: int) -> None:
     printed = row_amounts(in_annexure, labels)
     for label, field in BREAKUP_ROWS:
         assert printed[label] == [getattr(breakup, field)], label
+
+
+# --- Statement layout: each value is on the right line ---------------------
+
+
+def statement_amounts(text: str, row_ids: list[str]) -> dict[str, list[Decimal]]:
+    """The amounts after the last colon on each "[line] label: amounts" row
+    (labels such as "Less: Relief ..." have a colon of their own). A row ends
+    where the next row's "[line]" starts; the last ends at the annexures."""
+    # The diagonal watermark can land inside a line; its "16" is not an amount.
+    flat = normalise(text.split("Salary breakup")[0].replace(WATERMARK, " "))
+    rows: dict[str, list[Decimal]] = {}
+    position = 0
+    for index, row_id in enumerate(row_ids):
+        start = flat.index(f"[{row_id}] ", position)  # ValueError if missing
+        if index + 1 < len(row_ids):
+            end = flat.index(f"[{row_ids[index + 1]}] ", start)
+        else:
+            end = len(flat)
+        after_colon = flat[start:end].rsplit(": ", 1)[1]
+        rows[row_id] = [
+            Decimal(number) for number in re.findall(r"-?\d+(?:\.\d+)?", after_colon)
+        ]
+        position = end
+    return rows
+
+
+@pytest.mark.parametrize("number_format", FORMATS)
+@pytest.mark.parametrize("seed", SEEDS)
+def test_statement_amounts_are_on_their_own_lines(
+    rules: TaxRules, seed: int, number_format: NumberFormat
+) -> None:
+    form16, _ = generate(seed, rules)
+    text = extract_text(render_form16_statement(form16, number_format))
+    b = form16.part_b
+    ids = [line for line, _ in AMOUNT_LINES + DEDUCTION_LINES + TAX_LINES]
+    printed = statement_amounts(text, ids)
+
+    for line, path in AMOUNT_LINES + TAX_LINES:
+        assert printed[line] == [_field(b, path)], (line, path)
+    for line, path in DEDUCTION_LINES:
+        entry = _field(b, path)
+        columns = [entry.gross, entry.qualifying, entry.deductible]
+        assert printed[line] == [c for c in columns if c is not None], (line, path)

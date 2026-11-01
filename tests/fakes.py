@@ -12,6 +12,7 @@ from itr.application.form16_extraction import (
     ExtractedIdentity,
     LineId,
     Row,
+    UnsupportedItem,
 )
 from itr.application.ports import LLMResult, LLMUsage
 from itr.domain.form16 import DeductionLine, Form16
@@ -24,6 +25,15 @@ class FakeCall:
     output_model: type[BaseModel]
 
 
+FAKE_USAGE = LLMUsage(
+    input_tokens=0,
+    output_tokens=0,
+    cache_write_tokens=0,
+    cache_read_tokens=0,
+    cost_usd=Decimal(0),
+)
+
+
 @dataclass
 class FakeLLM:
     """Returns canned objects, one per call, in order, and records each call.
@@ -34,14 +44,7 @@ class FakeLLM:
 
     answers: list[BaseModel]
     calls: list[FakeCall] = field(default_factory=list)
-    usage = LLMUsage(
-        input_tokens=0,
-        output_tokens=0,
-        cache_write_tokens=0,
-        cache_read_tokens=0,
-        cost_usd=Decimal("0.00"),
-        from_disk_cache=False,
-    )
+    usage: LLMUsage = FAKE_USAGE  # reported for every call
 
     def structured[T: BaseModel](
         self, system: str, prompt: str, output_model: type[T]
@@ -157,6 +160,7 @@ def perfect_extraction(form16: Form16) -> ExtractedForm16:
         None if breakup is None else breakup.dearness_allowance_counts_for_retirement
     )
     return ExtractedForm16(
+        document_type="form16",
         identity=ExtractedIdentity(
             certificate_number=a.certificate_number,
             employer_name=a.employer_name,
@@ -176,5 +180,13 @@ def perfect_extraction(form16: Form16) -> ExtractedForm16:
             "NOT_STATED" if counts is None else ("YES" if counts else "NO")
         ),
         rows=rows,
+        unsupported_items=[
+            UnsupportedItem(
+                where=extra.where,
+                description=extra.description,
+                amount=_amount(extra.amount),
+            )
+            for extra in form16.unrecognised_lines
+        ],
         needs_review=[],
     )

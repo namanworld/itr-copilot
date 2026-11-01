@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from itr.application.form16_diff import diff_form16
+from itr.application.form16_diff import diff_form16, field_paths
 from itr.domain.rules import TaxRules
 from itr.synthetic.form16_generator import generate
 
@@ -48,3 +48,11 @@ def test_skipped_paths_are_not_compared(rules: TaxRules) -> None:
     )
     assert diff_form16(truth, no_quarters).mismatches != ()
     assert diff_form16(truth, no_quarters, skip=("part_a.quarters",)).mismatches == ()
+
+
+def test_a_star_skips_that_field_at_every_index(rules: TaxRules) -> None:
+    truth, _ = generate(1, rules)
+    paths = field_paths(truth, skip=("part_a.quarters[*].receipt_number",))
+    assert "part_a.quarters[0].receipt_number" not in paths
+    assert "part_a.quarters[3].receipt_number" not in paths
+    assert "part_a.quarters[0].tax_deducted" in paths

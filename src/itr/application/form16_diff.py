@@ -5,6 +5,7 @@ Python values, so amounts compare as Decimals: 123456.00 printed on the form
 equals 123456 in the truth, while "000123" and "123" stay different strings.
 """
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -44,10 +45,13 @@ def _leaves(node: Any, path: str = "") -> dict[str, Any]:
 
 
 def _skipped(path: str, skip: tuple[str, ...]) -> bool:
-    return any(
-        path == prefix or path.startswith((f"{prefix}.", f"{prefix}["))
-        for prefix in skip
-    )
+    """True if `path` is at or under any prefix in `skip`. A "[*]" in a
+    prefix matches any list index, e.g. "unrecognised_lines[*].where"."""
+    for prefix in skip:
+        pattern = re.escape(prefix).replace(r"\[\*\]", r"\[\d+\]")
+        if re.fullmatch(rf"{pattern}([.\[].*)?", path):
+            return True
+    return False
 
 
 def field_paths(form16: Form16, skip: tuple[str, ...] = ()) -> list[str]:

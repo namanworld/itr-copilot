@@ -1,4 +1,4 @@
-<!-- extract_form16 v5: layout-preserved text
+<!-- extract_form16 v6: document type and unsupported items
 Purpose: Extract Form 16 data without performing tax calculations.
 Version changes should invalidate the extraction cache.
 -->
@@ -12,6 +12,15 @@ Your task is to read the extracted text of a Form 16 PDF and populate the JSON s
 You are performing **document transcription, not tax computation, tax interpretation, or tax advice**.
 
 Extract only information explicitly printed in the document. Preserve the original figures even if they appear inconsistent, incorrect, or mathematically impossible.
+
+## First: is this a Form 16?
+
+Set `document_type` before anything else.
+
+- `form16`: the document is a certificate of tax deducted at source on salary, issued by an employer under section 203 (Form No. 16), with Part A and/or Part B.
+- `other`: anything else, such as a payslip, a salary slip, a bank statement, Form 26AS, an AIS, an ITR acknowledgement, or a letter. A document that shows salary figures or a PAN is not a Form 16 for that reason alone.
+
+When `document_type` is `other`, do not transcribe the document into the schema: write no rows and no unsupported items, set `opted_out_of_new_regime` to `NO`, `salary_breakup_printed` to `false`, `dearness_allowance_counts_for_retirement` to `NOT_STATED`, fill the identity fields with whatever is printed (empty strings where nothing is), and use `2000-01-01` for any date that is not printed. The application stops at `document_type` and reads nothing else.
 
 # 1. Source document interpretation
 
@@ -324,19 +333,19 @@ An explicitly printed DA amount of zero does not automatically mean that DA is i
 
 Do not infer the answer from salary components, employer practices, or tax treatment.
 
-# 8. Information outside the supplied schema
+# 8. Amounts that no row covers
 
-Ignore information printed in the document that has no corresponding field in the supplied JSON schema.
+Some Form 16s print amounts that are not lines of the official form, for example in an annexure of other income the employee declared to the employer: capital gains, rental income, business income, or a deduction the form has no line for.
 
-Examples include:
+Report every such amount in `unsupported_items`, one entry each:
 
-- Other income declared by the employee in a separate annexure.
-- Additional employer notes.
-- Explanatory statements.
-- Tax computation details not represented in the schema.
-- Other deductions or exemptions not represented in the schema.
+- `where`: where it is printed, such as the annexure's title.
+- `description`: what it is, in the document's own words.
+- `amount`: the amount, formatted as in Section 3.
 
-Do not add new JSON fields or rows to capture this information.
+The application cannot compute tax with these amounts, so it stops and tells the user. Never leave such an amount out, never fold it into a row, and never put it on a line it doesn't belong to (for example, do not add capital gains to line 7(b)).
+
+Text without an amount, such as employer notes, explanations or declarations, is ignored. Do not add new JSON fields or rows to capture it.
 
 Do not discard or overwrite an existing schema field merely because the document contains related information elsewhere.
 
@@ -376,10 +385,13 @@ Only extract document facts relevant to the schema.
 
 Return exactly one valid JSON object conforming to the supplied JSON schema. It has:
 
+- `document_type`: `form16` or `other` (see "First: is this a Form 16?").
+
 - `identity`: the Part A names, addresses, PANs, TAN, certificate number, assessment year and period.
 - `opted_out_of_new_regime`: `YES` or `NO` (Rule 4).
 - `salary_breakup_printed` and `dearness_allowance_counts_for_retirement` (Section 7).
 - `rows`: one row per printed amount.
+- `unsupported_items`: amounts printed on the document that no row line covers (Section 8). An empty list when there are none.
 - `needs_review`: values you could not read reliably, one short entry each, naming the line or field and the reason. Use it only for reading problems: unreadable, ambiguous or unmatched values. Never use it because a value looks wrong, implausible or inconsistent with another value; the application checks consistency in code. An empty list when everything was read clearly.
 
 ## Rows
@@ -410,12 +422,13 @@ Example rows:
 
 Before returning the JSON, internally verify:
 
-1. Every printed amount has exactly one row, with the right line and column.
-2. Every amount follows the permitted format.
-3. Every date follows the required format.
-4. The regime answer has not been inverted.
-5. Blank gross and qualifying cells on line 10 have no row; printed zeros do.
-6. Part A totals come from the printed Total row.
-7. Breakup rows appear only when a breakup is printed.
-8. No values have been calculated, inferred, reconciled, or corrected.
-9. Anything uncertain is in `needs_review`, not guessed.
+1. `document_type` is `form16` only for a Form 16; for anything else it is `other` and there are no rows.
+2. Every printed amount has exactly one row, or is in `unsupported_items` if no row line covers it.
+3. Every amount follows the permitted format.
+4. Every date follows the required format.
+5. The regime answer has not been inverted.
+6. Blank gross and qualifying cells on line 10 have no row; printed zeros do.
+7. Part A totals come from the printed Total row.
+8. Breakup rows appear only when a breakup is printed.
+9. No values have been calculated, inferred, reconciled, or corrected.
+10. Anything uncertain is in `needs_review`, not guessed.

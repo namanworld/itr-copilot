@@ -144,3 +144,36 @@ def test_missing_file_exits_1(
 ) -> None:
     assert cli.main(["extract", str(tmp_path / "nope.pdf")]) == 1
     assert "itr:" in capsys.readouterr().err
+
+
+def test_a_document_that_is_not_a_form16_exits_1(
+    tmp_path: Path,
+    rules: TaxRules,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    pdf, form16 = write_case(tmp_path, rules, with_truth=False)
+    answer = perfect_extraction(form16).model_copy(update={"document_type": "other"})
+    use_fake(monkeypatch, FakeLLM([answer]))
+
+    assert cli.main(["extract", str(pdf)]) == 1
+    assert "not a Form 16" in capsys.readouterr().err
+
+
+def test_unsupported_items_are_reported(
+    tmp_path: Path,
+    rules: TaxRules,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from itr.application.form16_extraction import UnsupportedItem
+
+    pdf, form16 = write_case(tmp_path, rules, with_truth=False)
+    item = UnsupportedItem(
+        where="Annexure", description="LTCG u/s 112A", amount="250000"
+    )
+    answer = perfect_extraction(form16).model_copy(update={"unsupported_items": [item]})
+    use_fake(monkeypatch, FakeLLM([answer]))
+
+    assert cli.main(["extract", str(pdf)]) == 0
+    assert "Unsupported: LTCG u/s 112A (250000) in Annexure" in capsys.readouterr().out

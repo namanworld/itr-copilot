@@ -15,13 +15,21 @@ from itr.application.extract_form16 import (
     DEDUCTION_LINES,
     NOT_EXTRACTED,
     Form16ValidationError,
+    NotAForm16Error,
     extract_form16,
     to_form16,
 )
 from itr.application.form16_diff import diff_form16
-from itr.application.form16_extraction import ExtractedForm16, LineId, Row
+from itr.application.form16_extraction import (
+    ExtractedForm16,
+    LineId,
+    Row,
+    UnsupportedItem,
+)
 from itr.domain.form16 import Form16
+from itr.domain.form16_mapping import to_tax_input
 from itr.domain.rules import TaxRules
+from itr.synthetic.dataset import _with_capital_gains
 from itr.synthetic.form16_generator import generate
 from tests.fakes import FakeLLM, perfect_extraction
 
@@ -114,8 +122,8 @@ def test_schema_stays_small() -> None:
     compile. Keep the row schema to a handful of objects and fields."""
     schema = TypeAdapter(ExtractedForm16).json_schema()
     objects = _objects(schema)
-    assert len(objects) <= 3
-    assert sum(len(obj["properties"]) for obj in objects) <= 25
+    assert len(objects) <= 4  # root, identity, row, unsupported item
+    assert sum(len(obj["properties"]) for obj in objects) <= 30
 
 
 def test_every_line_id_has_one_place_in_the_form16() -> None:
@@ -133,6 +141,8 @@ def test_prompt_has_the_rules_and_is_long_enough_to_cache() -> None:
     assert "extract only" in lowered  # nothing beyond what is printed
     assert '{"line":' in PROMPT  # the prompt shows the row output
     assert "needs_review" in PROMPT  # and where to put anything unclear
+    assert "document_type" in PROMPT  # how to say it isn't a Form 16
+    assert "unsupported_items" in PROMPT  # where income it can't handle goes
     # Haiku 5.5 caches a prefix of at least 512 tokens. English runs at about
     # 1.3 tokens a word, so 450 words is safely over.
     assert len(PROMPT.split()) > 450
@@ -325,3 +335,84 @@ def test_other_single_amount_lines_still_reject_deductible(truth: Form16) -> Non
     assert "line 12 has no deductible column" in problems_of(
         with_rows(extracted, [*extracted.rows, extra])
     )
+
+
+# --- Documents the engine can't handle ------------------------------------------
+
+CAPITAL_GAINS = UnsupportedItem(
+    where="Annexure: other income declared by the employee u/s 192(2B)",
+    description="Long-term capital gains on listed equity shares (section 112A)",
+    amount="250000",
+)
+
+
+def test_a_document_that_is_not_a_form16_is_refused(truth: Form16) -> None:
+    extracted = perfect_extraction(truth).model_copy(update={"document_type": "other"})
+    with pytest.raises(NotAForm16Error) as caught:
+        to_form16(extracted)
+    assert caught.value.extracted == extracted
+
+
+def test_not_a_form16_is_checked_before_the_rows(truth: Form16) -> None:
+    """A payslip has none of the core lines; that must not be reported as
+    missing lines, only as not a Form 16."""
+    extracted = perfect_extraction(truth).model_copy(
+        update={"document_type": "other", "rows": []}
+    )
+    with pytest.raises(NotAForm16Error):
+        to_form16(extracted)
+
+
+def test_extract_reports_the_cost_of_a_refused_document(truth: Form16) -> None:
+    extracted = perfect_extraction(truth).model_copy(update={"document_type": "other"})
+    with pytest.raises(NotAForm16Error) as caught:
+        extract_form16("payslip text", FakeLLM([extracted]), PROMPT)
+    assert caught.value.usage is not None
+
+
+def test_unsupported_items_become_unrecognised_lines(truth: Form16) -> None:
+    extracted = perfect_extraction(truth).model_copy(
+        update={"unsupported_items": [CAPITAL_GAINS]}
+    )
+    [line] = to_form16(extracted).unrecognised_lines
+    assert line.where == CAPITAL_GAINS.where
+    assert line.description == CAPITAL_GAINS.description
+    assert line.amount == Decimal(250000)
+
+
+def test_unsupported_items_make_to_tax_input_refuse(
+    truth: Form16, rules: TaxRules
+) -> None:
+    """The point of reporting them: the engine must not compute tax while
+    ignoring income it can't model (ADR 0004)."""
+    form16, extras = generate(3, rules)
+    extracted = perfect_extraction(form16).model_copy(
+        update={"unsupported_items": [CAPITAL_GAINS]}
+    )
+    result = to_tax_input(to_form16(extracted), extras, rules)
+    assert result.blocked
+    assert any("capital gains" in f.message.lower() for f in result.findings)
+
+
+def test_unsupported_item_wording_is_not_scored_but_its_amount_is(
+    rules: TaxRules,
+) -> None:
+    truth_cg = _with_capital_gains(generate(5, rules)[0], 5)
+    reworded = CAPITAL_GAINS.model_copy(
+        update={
+            "where": "Other income annexure",
+            "description": "LTCG",
+            "amount": f"{truth_cg.unrecognised_lines[0].amount}",
+        }
+    )
+    extracted = perfect_extraction(truth_cg).model_copy(
+        update={"unsupported_items": [reworded]}
+    )
+    diff = diff_form16(truth_cg, to_form16(extracted), skip=NOT_EXTRACTED)
+    assert diff.mismatches == ()
+
+    wrong_amount = extracted.model_copy(
+        update={"unsupported_items": [reworded.model_copy(update={"amount": "1"})]}
+    )
+    diff = diff_form16(truth_cg, to_form16(wrong_amount), skip=NOT_EXTRACTED)
+    assert [m.path for m in diff.mismatches] == ["unrecognised_lines[0].amount"]

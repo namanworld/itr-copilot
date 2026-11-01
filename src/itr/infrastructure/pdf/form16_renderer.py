@@ -10,12 +10,16 @@ The output is reproducible: the same Form16 always gives the same bytes.
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
+from pathlib import Path
+from typing import Literal
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import (
     BaseDocTemplate,
@@ -33,6 +37,19 @@ from itr.domain.form16 import DeductionLine, Form16
 
 WATERMARK = "SYNTHETIC SPECIMEN - NOT A REAL FORM-16"
 
+# Helvetica has no rupee sign, so layouts that print one use DejaVu Sans,
+# bundled here with its licence (fonts/LICENSE-DejaVu.txt).
+FONTS = Path(__file__).parent / "fonts"
+pdfmetrics.registerFont(TTFont("DejaVuSans", str(FONTS / "DejaVuSans.ttf")))
+pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", str(FONTS / "DejaVuSans-Bold.ttf")))
+
+# How amounts are printed. Real Form 16s differ by payroll vendor.
+NumberFormat = Literal["indian_grouping", "rupee_symbol", "plain_decimal", "rs_prefix"]
+
+# (line number, label, amount): one printed line of Part B.
+AmountLine = tuple[str, str, Decimal]
+DeductionRow = tuple[str, str, DeductionLine]
+
 _styles = getSampleStyleSheet()
 TITLE = ParagraphStyle("Title16", parent=_styles["Title"], fontSize=14, spaceAfter=2)
 HEADING = ParagraphStyle(
@@ -46,13 +63,25 @@ AMOUNT = ParagraphStyle("Amount16", parent=BODY, alignment=TA_RIGHT)
 # --- Formatting --------------------------------------------------------------
 
 
-def format_amount(amount: Decimal | None) -> str:
-    """Indian digit grouping, paise only when there are any: 15,00,000 or
-    6,300.12. Blank for an amount the form leaves empty."""
+def format_amount(
+    amount: Decimal | None, number_format: NumberFormat = "indian_grouping"
+) -> str:
+    """Print an amount the way the chosen payroll vendor would.
+
+    indian_grouping  15,00,000 or 6,300.12 (paise only when there are any)
+    rupee_symbol     ₹15,00,000
+    rs_prefix        Rs. 15,00,000
+    plain_decimal    1500000.00
+
+    Blank for an amount the form leaves empty.
+    """
     if amount is None:
         return ""
     sign = "-" if amount < 0 else ""
     text = f"{abs(amount).quantize(Decimal('0.01')):f}"
+    if number_format == "plain_decimal":
+        return f"{sign}{text}"
+
     whole, paise = text.split(".")
     head, last_three = whole[:-3], whole[-3:]
     groups: list[str] = []
@@ -60,7 +89,14 @@ def format_amount(amount: Decimal | None) -> str:
         groups.insert(0, head[-2:])
         head = head[:-2]
     grouped = ",".join([*groups, last_three])
-    return f"{sign}{grouped}" if paise == "00" else f"{sign}{grouped}.{paise}"
+    if paise != "00":
+        grouped = f"{grouped}.{paise}"
+
+    if number_format == "rupee_symbol":
+        return f"{sign}₹{grouped}"
+    if number_format == "rs_prefix":
+        return f"Rs. {sign}{grouped}"
+    return f"{sign}{grouped}"
 
 
 def format_date(value: date) -> str:
@@ -97,19 +133,19 @@ def _table(
     return table
 
 
-def _pairs(rows: list[tuple[str, str]]) -> Table:
+def pairs_table(rows: list[tuple[str, str]]) -> Table:
     """Label and value side by side."""
     return _table([[label, value] for label, value in rows], [70 * mm, 110 * mm], False)
 
 
-def _amount_rows(rows: list[tuple[str, str, Decimal]]) -> Table:
+def amount_table(rows: list[AmountLine]) -> Table:
     """Part B lines: line number, description, amount in rupees."""
     body = [["Line", "Particulars", "Amount (Rs.)"]]
     body += [[line, label, format_amount(value)] for line, label, value in rows]
     return _table(body, [16 * mm, 124 * mm, 40 * mm], True, amount_columns=(2,))
 
 
-def _deduction_rows(rows: list[tuple[str, str, DeductionLine]]) -> Table:
+def _deduction_rows(rows: list[DeductionRow]) -> Table:
     """Chapter VI-A: gross, qualifying and deductible amounts."""
     body = [["Line", "Deduction", "Gross", "Qualifying", "Deductible"]]
     body += [
@@ -171,7 +207,7 @@ def _part_a(form16: Form16) -> list[Flowable]:
             BODY,
         ),
         Spacer(1, 3 * mm),
-        _pairs(
+        pairs_table(
             [
                 ("Certificate No.", a.certificate_number),
                 (
@@ -204,12 +240,16 @@ def _part_a(form16: Form16) -> list[Flowable]:
     ]
 
 
-def _part_b(form16: Form16) -> list[Flowable]:
-    b = form16.part_b
-    g, s10, s16 = b.gross_salary, b.section_10, b.section_16
-    other, via, t = b.other_income, b.chapter_via, b.tax
+# --- What Part B prints, line by line ------------------------------------------
+# Every layout prints these same lines, so they are listed once here.
 
-    salary_rows: list[tuple[str, str, Decimal]] = [
+
+def salary_lines(form16: Form16) -> list[AmountLine]:
+    """Lines 1 to 9: salary, exemptions, deductions under section 16, other
+    income and gross total income."""
+    b = form16.part_b
+    g, s10, s16, other = b.gross_salary, b.section_10, b.section_16, b.other_income
+    rows: list[AmountLine] = [
         ("1(a)", "Salary as per provisions contained in section 17(1)", g.section_17_1),
         ("1(b)", "Value of perquisites under section 17(2)", g.section_17_2),
         ("1(c)", "Profits in lieu of salary under section 17(3)", g.section_17_3),
@@ -250,11 +290,11 @@ def _part_b(form16: Form16) -> list[Flowable]:
             s10.special_allowances_10_14,
         ),
     ]
-    salary_rows += [
+    rows += [
         ("2(g)", f"Other exemption under section 10, clause {c.clause}", c.amount)
         for c in s10.other
     ]
-    salary_rows += [
+    rows += [
         (
             "2(h)",
             "Total amount of any other exemption under section 10",
@@ -297,8 +337,13 @@ def _part_b(form16: Form16) -> list[Flowable]:
         ("8", "Total amount of other income reported by the employee", other.total),
         ("9", "Gross total income", b.gross_total_income),
     ]
+    return rows
 
-    deduction_rows: list[tuple[str, str, DeductionLine]] = [
+
+def deduction_lines(form16: Form16) -> list[DeductionRow]:
+    """Line 10: Chapter VI-A, with gross, qualifying and deductible columns."""
+    via = form16.part_b.chapter_via
+    rows: list[DeductionRow] = [
         ("10(a)", "Section 80C", via.section_80c),
         ("10(b)", "Section 80CCC", via.section_80ccc),
         ("10(c)", "Section 80CCD(1)", via.section_80ccd_1),
@@ -324,12 +369,17 @@ def _part_b(form16: Form16) -> list[Flowable]:
         ("10(k)", "Section 80G", via.section_80g),
         ("10(l)", "Section 80TTA", via.section_80tta),
     ]
-    deduction_rows += [
+    rows += [
         ("10(m)", f"Section {c.clause}", DeductionLine(deductible=c.amount))
         for c in via.other
     ]
+    return rows
 
-    tax_rows: list[tuple[str, str, Decimal]] = [
+
+def tax_lines(form16: Form16) -> list[AmountLine]:
+    """Lines 10(n) to 21: the deduction totals and the tax computation."""
+    via, t = form16.part_b.chapter_via, form16.part_b.tax
+    return [
         (
             "10(n)",
             "Total of amount deductible under any other provision(s) of Chapter VI-A",
@@ -348,11 +398,27 @@ def _part_b(form16: Form16) -> list[Flowable]:
         ("21", "Net tax payable", t.net_tax_payable),
     ]
 
+
+def breakup_lines(form16: Form16) -> list[AmountLine]:
+    """The employer's salary breakup annexure, if attached."""
+    breakup = form16.salary_breakup
+    if breakup is None:
+        return []
+    return [
+        ("", "Basic salary", breakup.basic),
+        ("", "Dearness allowance", breakup.dearness_allowance),
+        ("", "House rent allowance received", breakup.house_rent_allowance),
+        ("", "Other allowances", breakup.other_allowances),
+    ]
+
+
+def _part_b(form16: Form16) -> list[Flowable]:
+    b = form16.part_b
     return [
         Paragraph("PART B (Annexure-I)", HEADING),
         Paragraph("Details of salary paid and any other income and tax deducted", BODY),
         Spacer(1, 3 * mm),
-        _pairs(
+        pairs_table(
             [
                 (
                     "A. Whether opting out of taxation u/s 115BAC(1A)?",
@@ -361,12 +427,12 @@ def _part_b(form16: Form16) -> list[Flowable]:
             ]
         ),
         Spacer(1, 2 * mm),
-        _amount_rows(salary_rows),
+        amount_table(salary_lines(form16)),
         Spacer(1, 2 * mm),
         Paragraph("10. Deductions under Chapter VI-A", BODY),
-        _deduction_rows(deduction_rows),
+        _deduction_rows(deduction_lines(form16)),
         Spacer(1, 2 * mm),
-        _amount_rows(tax_rows),
+        amount_table(tax_lines(form16)),
     ]
 
 
@@ -379,16 +445,9 @@ def _annexure(form16: Form16) -> list[Flowable]:
     return [
         PageBreak(),
         Paragraph("ANNEXURE: SALARY BREAKUP (attached by the employer)", HEADING),
-        _amount_rows(
-            [
-                ("", "Basic salary", breakup.basic),
-                ("", "Dearness allowance", breakup.dearness_allowance),
-                ("", "House rent allowance received", breakup.house_rent_allowance),
-                ("", "Other allowances", breakup.other_allowances),
-            ]
-        ),
+        amount_table(breakup_lines(form16)),
         Spacer(1, 2 * mm),
-        _pairs(
+        pairs_table(
             [
                 (
                     "Dearness allowance forms part of salary for retirement benefits",
@@ -399,7 +458,24 @@ def _annexure(form16: Form16) -> list[Flowable]:
     ]
 
 
-def _draw_watermark(canvas: Canvas, _document: BaseDocTemplate) -> None:
+def _declared_income(form16: Form16) -> list[Flowable]:
+    """Amounts printed on the document that aren't lines of Form 16, such as
+    capital gains the employee declared to the employer."""
+    if not form16.unrecognised_lines:
+        return []
+    rows = [["Where", "Particulars", "Amount (Rs.)"]]
+    rows += [
+        [extra.where, extra.description, format_amount(extra.amount)]
+        for extra in form16.unrecognised_lines
+    ]
+    return [
+        Spacer(1, 4 * mm),
+        Paragraph("ANNEXURE: OTHER INCOME DECLARED BY THE EMPLOYEE", HEADING),
+        _table(rows, [60 * mm, 80 * mm, 40 * mm], True, amount_columns=(2,)),
+    ]
+
+
+def draw_watermark(canvas: Canvas, _document: BaseDocTemplate) -> None:
     canvas.saveState()
     canvas.setFont("Helvetica-Bold", 30)
     canvas.setFillColor(colors.Color(0.85, 0.2, 0.2, alpha=0.18))
@@ -431,7 +507,7 @@ def render_form16(form16: Form16) -> bytes:
         id="body",
     )
     document.addPageTemplates(
-        [PageTemplate(id="page", frames=[frame], onPage=_draw_watermark)]
+        [PageTemplate(id="page", frames=[frame], onPage=draw_watermark)]
     )
     story: list[Flowable] = [
         Paragraph("FORM NO. 16", TITLE),
@@ -441,6 +517,7 @@ def render_form16(form16: Form16) -> bytes:
         PageBreak(),
         *_part_b(form16),
         *_annexure(form16),
+        *_declared_income(form16),
     ]
     document.build(story)
     return buffer.getvalue()
