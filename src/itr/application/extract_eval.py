@@ -21,6 +21,7 @@ How documents are counted:
   what this run actually spent.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Literal
@@ -48,6 +49,7 @@ class DocumentResult:
     problems: tuple[str, ...] = ()  # why validation failed
     expected_refusal: Refusal | None = None  # None: should be extracted
     refusal: Refusal | None = None  # how the model refused, if it did
+    attempts: int = 1  # 2 when the first reply failed validation or had doubts
 
     @property
     def extracted(self) -> bool:
@@ -89,6 +91,7 @@ def evaluate_document(
             error=failed,
             usage=error.usage,
             refusal="not_a_form16",
+            attempts=error.attempts,
             expected_refusal=expected_refusal,
         )
     except Form16ValidationError as error:
@@ -98,6 +101,7 @@ def evaluate_document(
             error="extracted Form 16 failed validation",
             usage=error.usage,
             problems=tuple(error.problems),
+            attempts=error.attempts,
             expected_refusal=expected_refusal,
         )
     except LLMOutputError as error:
@@ -114,6 +118,7 @@ def evaluate_document(
             fields,
             usage=extraction.usage,
             refusal=refusal,
+            attempts=extraction.attempts,
             expected_refusal=expected_refusal,
         )
     diff = diff_form16(truth, extraction.form16, skip=NOT_EXTRACTED)
@@ -122,6 +127,7 @@ def evaluate_document(
         fields,
         diff.mismatches,
         usage=extraction.usage,
+        attempts=extraction.attempts,
         refusal=refusal,
         expected_refusal=expected_refusal,
     )
@@ -129,6 +135,11 @@ def evaluate_document(
 
 def _money(value: Decimal) -> str:
     return f"{value:.6f}"
+
+
+def _average(values: Iterable[int]) -> float:
+    counted = list(values)
+    return round(sum(counted) / len(counted), 1) if counted else 0.0
 
 
 def _share(part: int, whole: int) -> float:
@@ -153,6 +164,7 @@ def build_report(results: list[DocumentResult], run: dict[str, Any]) -> dict[str
 
     fully_correct = [r.name for r in results if r.fully_correct]
     should_refuse = [r for r in results if r.expected_refusal is not None]
+    retried = [r for r in results if r.attempts > 1]
     usages = [r.usage for r in results if r.usage is not None]
     total = sum((u.cost_usd for u in usages), Decimal(0))
     charged = sum((u.cost_usd for u in usages if not u.from_disk_cache), Decimal(0))
@@ -195,6 +207,13 @@ def build_report(results: list[DocumentResult], run: dict[str, Any]) -> dict[str
                 if r.expected_refusal is None and r.refusal is not None
             ],
         },
+        "retries": {
+            "documents_retried": len(retried),
+            "succeeded_after_retry": sum(1 for r in retried if r.extracted),
+            "documents": [
+                {"document": r.name, "extracted": r.extracted} for r in retried
+            ],
+        },
         "failed_extractions": [
             {"document": r.name, "error": r.error, "problems": list(r.problems)}
             for r in results
@@ -207,6 +226,10 @@ def build_report(results: list[DocumentResult], run: dict[str, Any]) -> dict[str
             else _money(Decimal(0)),
             "charged_this_run_usd": _money(charged),
             "documents_from_disk_cache": sum(1 for u in usages if u.from_disk_cache),
+            "average_tokens_per_document": {
+                "input": _average(u.input_tokens for u in usages),
+                "output": _average(u.output_tokens for u in usages),
+            },
             "tokens": {
                 "input": sum(u.input_tokens for u in usages),
                 "output": sum(u.output_tokens for u in usages),

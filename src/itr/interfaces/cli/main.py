@@ -284,6 +284,8 @@ def run_extract(args: argparse.Namespace) -> int:
 
     print(extraction.form16.model_dump_json(indent=2))
     print(format_usage(extraction.usage))
+    if extraction.attempts > 1:
+        print("Retried once: the first reply failed validation or had doubtful cells")
     for item in extraction.form16.unrecognised_lines:
         print(
             f"Unsupported: {item.description} ({item.amount}) in {item.where}; "
@@ -454,9 +456,10 @@ def run_synth_form16(args: argparse.Namespace) -> int:
 
 def print_result(result: DocumentResult) -> None:
     """One line per document, with the reason when it isn't fully correct."""
+    retried = " (after 1 retry)" if result.attempts > 1 else ""
     if result.fully_correct:
         refused = f" (refused: {result.refusal})" if result.refusal else ""
-        print(f"{result.name}: ok{refused}")
+        print(f"{result.name}: ok{refused}{retried}")
         return
     reasons: list[str] = []
     if not result.refusal_correct:
@@ -471,7 +474,7 @@ def print_result(result: DocumentResult) -> None:
             f"{m.path}: expected {m.expected}, got {m.actual}"
             for m in result.mismatches
         ]
-    print(f"{result.name}: FAIL")
+    print(f"{result.name}: FAIL{retried}")
     for reason in reasons:
         print(f"    {reason}")
 
@@ -561,7 +564,8 @@ def run_eval_extract(args: argparse.Namespace) -> int:
     )
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    path = out / f"extract-{today}.json"
+    label = f"-{args.label}" if args.label else ""
+    path = out / f"extract-{today}{label}.json"
     path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
     refusals = report["refusals"]
@@ -570,13 +574,16 @@ def run_eval_extract(args: argparse.Namespace) -> int:
         f"fully correct; {len(report['failures'])} field mismatches; "
         f"{len(report['failed_extractions'])} failed extractions; "
         f"refusals {refusals['correct']}/{refusals['expected']} correct, "
-        f"{len(refusals['false'])} false"
+        f"{len(refusals['false'])} false; "
+        f"{report['retries']['documents_retried']} retried"
     )
     cost = report["cost"]
     print(
         f"Cost: ${cost['total_usd']} total, ${cost['average_usd_per_document']} "
         f"per document; charged this run: ${cost['charged_this_run_usd']}"
     )
+    tokens = cost["average_tokens_per_document"]
+    print(f"Tokens per document: {tokens['input']} input, {tokens['output']} output")
     print(f"Report: {path}")
     return 0
 
@@ -642,6 +649,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     eval_cmd.add_argument(
         "--no-cache", action="store_true", help="ignore saved responses"
+    )
+    eval_cmd.add_argument(
+        "--label",
+        default="",
+        help="added to the report name, e.g. before -> extract-<date>-before.json",
     )
 
     args = parser.parse_args(argv)

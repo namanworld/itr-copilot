@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel
 
 from itr.application.extract_eval import build_report, evaluate_document
-from itr.application.form16_extraction import ExtractedForm16
+from itr.application.form16_extraction import ExtractedForm16, LineId, Row
 from itr.application.ports import LLMClient, LLMOutputError, LLMResult, LLMUsage
 from itr.domain.form16 import Form16
 from itr.domain.rules import TaxRules
@@ -47,11 +47,12 @@ def truth(rules: TaxRules) -> Form16:
     return generate(3, rules)[0]
 
 
-def with_amount(extracted: ExtractedForm16, line: str, amount: str) -> ExtractedForm16:
-    rows = [
-        r.model_copy(update={"amount": amount}) if r.line == line else r
-        for r in extracted.rows
-    ]
+def with_amount(
+    extracted: ExtractedForm16, line: LineId, amount: str
+) -> ExtractedForm16:
+    """A copy with one single-amount line set to `amount`."""
+    rows = [r for r in extracted.rows if r.line != line]
+    rows.append(Row(line=line, amount=amount))
     return extracted.model_copy(update={"rows": rows})
 
 
@@ -381,3 +382,73 @@ def test_eval_extract_scores_the_tagged_eval_set(
     assert "F019: ok (refused: unsupported_items)" in printed
     assert "F020: ok (refused: not_a_form16)" in printed
     assert "refusals 2/2 correct, 0 false" in printed
+
+
+# --- Retries ----------------------------------------------------------------------
+
+
+def test_report_records_retries(truth: Form16) -> None:
+    perfect = perfect_extraction(truth)
+    bad = perfect.model_copy(
+        update={"identity": perfect.identity.model_copy(update={"employee_pan": "X"})}
+    )
+    results = [
+        evaluate_document("F001", "t", truth, FakeLLM([perfect]), PROMPT),
+        evaluate_document("F002", "t", truth, FakeLLM([bad, perfect]), PROMPT),
+        evaluate_document("F003", "t", truth, FakeLLM([bad, bad]), PROMPT),
+    ]
+    assert [r.attempts for r in results] == [1, 2, 2]
+
+    report = build_report(results, {})
+    assert report["retries"] == {
+        "documents_retried": 2,
+        "succeeded_after_retry": 1,
+        "documents": [
+            {"document": "F002", "extracted": True},
+            {"document": "F003", "extracted": False},
+        ],
+    }
+    assert report["documents_fully_correct"] == 2  # F002 counts once it succeeds
+
+
+# --- Token averages and report names ------------------------------------------
+
+
+def test_report_gives_average_tokens_per_document(truth: Form16) -> None:
+    results = [
+        evaluate_document(
+            name,
+            "t",
+            truth,
+            FakeLLM([perfect_extraction(truth)], usage=usage("0.001")),
+            PROMPT,
+        )
+        for name in ("F001", "F002")
+    ]
+    tokens = build_report(results, {})["cost"]["average_tokens_per_document"]
+    assert tokens == {"input": 2000.0, "output": 2500.0}
+
+
+def test_label_goes_into_the_report_name(
+    tmp_path: Path,
+    rules: TaxRules,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    api_key: None,
+) -> None:
+    data, out = tmp_path / "data", tmp_path / "reports"
+    data.mkdir()
+    form16, _ = generate(42, rules)
+    (data / "F001.pdf").write_bytes(render_form16(form16))
+    (data / "F001.truth.json").write_text(form16.model_dump_json())
+    llm = FakeLLM([perfect_extraction(form16)])
+    monkeypatch.setattr(cli, "make_llm", lambda settings, use_disk_cache: llm)
+
+    assert (
+        cli.main(["eval-extract", str(data), "--out", str(out), "--label", "after"])
+        == 0
+    )
+
+    [path] = out.glob("extract-*-after.json")
+    assert "Tokens per document:" in capsys.readouterr().out
+    assert json.loads(path.read_text())["documents"] == 1

@@ -7,7 +7,8 @@ from decimal import Decimal
 from pydantic import BaseModel
 
 from itr.application.form16_extraction import (
-    Column,
+    DeductionLineId,
+    DeductionRow,
     ExtractedForm16,
     ExtractedIdentity,
     LineId,
@@ -66,10 +67,15 @@ def _amount(value: Decimal) -> str:
     return f"{value.quantize(Decimal('0.01')):f}".removesuffix(".00")
 
 
+def _cell(value: Decimal | None) -> str:
+    """A gross or qualifying cell: "" when blank."""
+    return "" if value is None else _amount(value)
+
+
 def perfect_extraction(form16: Form16) -> ExtractedForm16:
     """What a flawless model would return for this Form 16: the canned answer
-    for FakeLLM in extraction tests. One row per printed value, in the order
-    the form prints them; a blank gross or qualifying cell gets no row.
+    for FakeLLM in extraction tests. One row per printed line, in the order
+    the form prints them; a blank gross or qualifying cell is "".
 
     Written from the Form16 side, separately from the mapping tables in
     extract_form16, so a round-trip test catches a mistake in either."""
@@ -105,7 +111,7 @@ def perfect_extraction(form16: Form16) -> ExtractedForm16:
         ("8", other.total),
         ("9", b.gross_total_income),
     ]
-    deductions: list[tuple[LineId, DeductionLine]] = [
+    deductions: list[tuple[DeductionLineId, DeductionLine]] = [
         ("10(a)", via.section_80c),
         ("10(b)", via.section_80ccc),
         ("10(c)", via.section_80ccd_1),
@@ -142,19 +148,7 @@ def perfect_extraction(form16: Form16) -> ExtractedForm16:
             ("breakup:other", breakup.other_allowances),
         ]
 
-    rows = [Row(line=line, column="amount", amount=_amount(v)) for line, v in amounts]
-    for line, entry in deductions:
-        columns: list[tuple[Column, Decimal | None]] = [
-            ("gross", entry.gross),
-            ("qualifying", entry.qualifying),
-            ("deductible", entry.deductible),
-        ]
-        rows += [
-            Row(line=line, column=column, amount=_amount(value))
-            for column, value in columns
-            if value is not None
-        ]
-    rows += [Row(line=line, column="amount", amount=_amount(v)) for line, v in totals]
+    rows = [Row(line=line, amount=_amount(v)) for line, v in amounts + totals]
 
     counts = (
         None if breakup is None else breakup.dearness_allowance_counts_for_retirement
@@ -164,9 +158,7 @@ def perfect_extraction(form16: Form16) -> ExtractedForm16:
         identity=ExtractedIdentity(
             certificate_number=a.certificate_number,
             employer_name=a.employer_name,
-            employer_address=a.employer_address,
             employee_name=a.employee_name,
-            employee_address=a.employee_address,
             employer_pan=a.employer_pan,
             employer_tan=a.employer_tan,
             employee_pan=a.employee_pan,
@@ -180,6 +172,15 @@ def perfect_extraction(form16: Form16) -> ExtractedForm16:
             "NOT_STATED" if counts is None else ("YES" if counts else "NO")
         ),
         rows=rows,
+        deductions=[
+            DeductionRow(
+                line=line,
+                gross=_cell(entry.gross),
+                qualifying=_cell(entry.qualifying),
+                deductible=_amount(entry.deductible),
+            )
+            for line, entry in deductions
+        ],
         unsupported_items=[
             UnsupportedItem(
                 where=extra.where,

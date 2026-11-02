@@ -483,12 +483,17 @@
     "missed": [],
     "false": []
   },
+  "retries": {
+    "documents_retried": 0,
+    "succeeded_after_retry": 0,
+    "documents": []
+  },
   "failed_extractions": [],
   "cost": {
     "total_usd": "0.035388",
     "average_usd_per_document": "0.001769",
-    "charged_this_run_usd": "0.035388",
-    "documents_from_disk_cache": 0,
+    "charged_this_run_usd": "0.000000",
+    "documents_from_disk_cache": 20,
     "tokens": {
       "input": 42018,
       "output": 56725,

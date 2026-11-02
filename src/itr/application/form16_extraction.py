@@ -3,17 +3,26 @@
 This is not the domain Form16. It is shaped for structured outputs, whose
 compiled grammar has a size limit: a schema with a named field for each of
 the ~110 values was rejected as "too large". So the amounts come back as a
-list of small rows instead, one per printed value:
+list of small rows instead, one per printed line:
 
-    {"line": "10(a)", "column": "deductible", "amount": "150000"}
+    {"line": "12", "amount": "1150000"}
 
-The grammar only has to describe one row, so its size doesn't grow with the
-form. Code (extract_form16.to_form16) turns the rows into the domain Form16
-and checks what the schema no longer can: no duplicates, the right columns,
-and the core lines present.
+Chapter VI-A lines 10(a)-10(l) print three columns, so they get their own
+row shape with all three required:
+
+    {"line": "10(a)", "gross": "111000", "qualifying": "", "deductible": "111000"}
+
+With one row per column, Claude sometimes skipped the gross row when it
+printed the same amount as the deductible. A required field can't be
+skipped, so the deduction row asks for every cell.
+
+The grammar only has to describe two row shapes, so its size doesn't grow
+with the form. Code (extract_form16.to_form16) turns the rows into the
+domain Form16 and checks what the schema no longer can: no duplicates and
+the core lines present.
 
 - A line that isn't printed has no row; the mapping treats it as 0.
-- A blank gross or qualifying cell on line 10 has no row either; the mapping
+- A blank gross or qualifying cell is "" in its deduction row; the mapping
   treats it as None, so a blank cell and a printed 0 stay different.
 - Amounts are strings matching AMOUNT. The pattern is checked by Pydantic when
   the reply arrives, not while Claude writes it, so the prompt states it too.
@@ -32,9 +41,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 AMOUNT = r"^-?\d+(\.\d{1,2})?$"
 AmountText = Annotated[str, Field(pattern=AMOUNT)]
+# A gross or qualifying cell: an amount, or "" when the cell is blank.
+CELL = r"^(-?\d+(\.\d{1,2})?)?$"
+CellText = Annotated[str, Field(pattern=CELL)]
 YesNo = Literal["YES", "NO"]
 
-# Every value a row can hold, named as the form prints it. "A:" is the Total
+# Every single-amount line, named as the form prints it. "A:" is the Total
 # row of Part A's quarterly table; "breakup:" is the salary breakup annexure.
 LineId = Literal[
     "A:total_paid",
@@ -63,18 +75,6 @@ LineId = Literal[
     "7(b)",
     "8",
     "9",
-    "10(a)",
-    "10(b)",
-    "10(c)",
-    "10(d)",
-    "10(e)",
-    "10(f)",
-    "10(g)",
-    "10(h)",
-    "10(i)",
-    "10(j)",
-    "10(k)",
-    "10(l)",
     "10(n)",
     "11",
     "12",
@@ -92,8 +92,21 @@ LineId = Literal[
     "breakup:hra",
     "breakup:other",
 ]
-# "amount" for single-amount lines; line 10(a)-10(l) has three columns.
-Column = Literal["amount", "gross", "qualifying", "deductible"]
+# Chapter VI-A lines with gross, qualifying and deductible columns.
+DeductionLineId = Literal[
+    "10(a)",
+    "10(b)",
+    "10(c)",
+    "10(d)",
+    "10(e)",
+    "10(f)",
+    "10(g)",
+    "10(h)",
+    "10(i)",
+    "10(j)",
+    "10(k)",
+    "10(l)",
+]
 
 
 class Extracted(BaseModel):
@@ -103,9 +116,7 @@ class Extracted(BaseModel):
 class ExtractedIdentity(Extracted):
     certificate_number: str
     employer_name: str
-    employer_address: str
     employee_name: str
-    employee_address: str
     employer_pan: str
     employer_tan: str
     employee_pan: str
@@ -116,8 +127,14 @@ class ExtractedIdentity(Extracted):
 
 class Row(Extracted):
     line: LineId
-    column: Column
     amount: AmountText
+
+
+class DeductionRow(Extracted):
+    line: DeductionLineId
+    gross: CellText = Field(description='"" when the cell is blank')
+    qualifying: CellText = Field(description='"" when the cell is blank')
+    deductible: AmountText
 
 
 class UnsupportedItem(Extracted):
@@ -141,6 +158,7 @@ class ExtractedForm16(Extracted):
     salary_breakup_printed: bool
     dearness_allowance_counts_for_retirement: Literal["YES", "NO", "NOT_STATED"]
     rows: list[Row]
+    deductions: list[DeductionRow]
     unsupported_items: list[UnsupportedItem] = Field(
         description="income or amounts printed that no row line covers"
     )

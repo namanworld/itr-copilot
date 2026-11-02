@@ -6,7 +6,7 @@ implementations live in infrastructure/; tests use fakes.
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Protocol
+from typing import Protocol, Self
 
 from pydantic import BaseModel
 
@@ -26,6 +26,18 @@ class LLMUsage:
     cache_read_tokens: int
     cost_usd: Decimal
     from_disk_cache: bool = False
+
+    def __add__(self, other: Self) -> Self:
+        """Two calls together, e.g. a first try and its retry. They count as
+        from the disk cache only if neither was charged."""
+        return type(self)(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            cache_write_tokens=self.cache_write_tokens + other.cache_write_tokens,
+            cache_read_tokens=self.cache_read_tokens + other.cache_read_tokens,
+            cost_usd=self.cost_usd + other.cost_usd,
+            from_disk_cache=self.from_disk_cache and other.from_disk_cache,
+        )
 
 
 @dataclass(frozen=True)

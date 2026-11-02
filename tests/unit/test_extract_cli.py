@@ -133,7 +133,8 @@ def test_invalid_extraction_exits_1_with_the_problems(
     pdf, form16 = write_case(tmp_path, rules, with_truth=False)
     answer = perfect_extraction(form16)
     identity = answer.identity.model_copy(update={"employee_pan": "NOTAPAN"})
-    use_fake(monkeypatch, FakeLLM([answer.model_copy(update={"identity": identity})]))
+    bad = answer.model_copy(update={"identity": identity})
+    use_fake(monkeypatch, FakeLLM([bad, bad]))  # the first try and its retry
 
     assert cli.main(["extract", str(pdf)]) == 1
     assert "part_a.employee_pan" in capsys.readouterr().err
@@ -177,3 +178,21 @@ def test_unsupported_items_are_reported(
 
     assert cli.main(["extract", str(pdf)]) == 0
     assert "Unsupported: LTCG u/s 112A (250000) in Annexure" in capsys.readouterr().out
+
+
+def test_a_retry_is_reported(
+    tmp_path: Path,
+    rules: TaxRules,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    pdf, form16 = write_case(tmp_path, rules, with_truth=True)
+    answer = perfect_extraction(form16)
+    identity = answer.identity.model_copy(update={"employee_pan": "NOTAPAN"})
+    bad = answer.model_copy(update={"identity": identity})
+    use_fake(monkeypatch, FakeLLM([bad, answer]))
+
+    assert cli.main(["extract", str(pdf)]) == 0
+    out = capsys.readouterr().out
+    assert "Retried once: the first reply failed validation" in out
+    assert "fields match" in out
